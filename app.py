@@ -12,7 +12,7 @@ import tempfile
 app = Flask(__name__)
 
 # Session configuration
-app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = os.path.join(tempfile.gettempdir(), 'flask_session')
 app.config['SESSION_PERMANENT'] = False
@@ -27,13 +27,18 @@ def get_sheet_data(spreadsheet_id, tab_name):
     creds = None
     
     try:
-        if os.path.exists('credentials.json'):
+        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+        if google_creds:
+            print("Found GOOGLE_CREDENTIALS in environment, loading...")
+            creds_dict = json.loads(google_creds)
+            creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        elif os.path.exists('credentials.json'):
             print("Found credentials.json, loading...")
             creds = service_account.Credentials.from_service_account_file(
                 'credentials.json', scopes=SCOPES)
         else:
-            print("ERROR: credentials.json not found!")
-            raise ValueError("credentials.json not found")
+            print("ERROR: No credentials found!")
+            raise ValueError("No credentials found")
 
         print("Building sheets service...")
         service = build('sheets', 'v4', credentials=creds)
@@ -329,4 +334,5 @@ def test_sheet(spreadsheet_id, tab_name):
         })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5002)
+    port = int(os.environ.get('PORT', 5002))
+    app.run(host='0.0.0.0', port=port)
