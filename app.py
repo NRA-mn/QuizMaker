@@ -137,31 +137,50 @@ def index():
 @app.route('/get_tabs/<spreadsheet_id>')
 def get_tabs(spreadsheet_id):
     try:
+        print("\n=== DEBUG: GET_TABS ===")
+        print(f"Spreadsheet ID: {spreadsheet_id}")
+        
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
         creds = None
         
         google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+        print(f"Environment has GOOGLE_CREDENTIALS: {bool(google_creds)}")
+        
         if google_creds:
-            print("Found GOOGLE_CREDENTIALS in environment, loading...")
-            creds_dict = json.loads(google_creds)
-            creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            print("Loading credentials from environment variable...")
+            try:
+                creds_dict = json.loads(google_creds)
+                print("Successfully parsed credentials JSON")
+                creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+                print("Successfully created credentials from dict")
+            except Exception as e:
+                print(f"Error parsing credentials: {str(e)}")
+                raise
         elif os.path.exists('credentials.json'):
-            print("Found credentials.json, loading...")
+            print("Loading credentials from file...")
             creds = service_account.Credentials.from_service_account_file(
                 'credentials.json', scopes=SCOPES)
+            print("Successfully loaded credentials from file")
         else:
-            print("ERROR: No credentials found!")
+            print("No credentials found!")
             raise ValueError("No credentials found")
 
         print("Building sheets service...")
         service = build('sheets', 'v4', credentials=creds)
+        print("Successfully built service")
+        
+        print("Getting sheet metadata...")
         sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheets = sheet_metadata.get('sheets', '')
         titles = [sheet['properties']['title'] for sheet in sheets]
+        print(f"Found sheets: {titles}")
         
         return jsonify(titles)
     except Exception as e:
         print(f"Error in get_tabs: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/quiz/<spreadsheet_id>/<tab_name>')
