@@ -30,12 +30,16 @@
             margin-bottom: 5px;
             color: #666;
         }
-        .form-group input {
+        .form-group input, .form-group select {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
             box-sizing: border-box;
+        }
+        .form-group select:disabled {
+            background-color: #f5f5f5;
+            cursor: not-allowed;
         }
         button {
             padding: 8px 15px;
@@ -46,8 +50,17 @@
             background-color: #4CAF50;
             color: white;
         }
-        button:hover {
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
             background-color: #45a049;
+        }
+        #loading-tabs {
+            color: #666;
+            font-style: italic;
+            display: none;
         }
         .quiz-link {
             background: #f8f9fa;
@@ -79,14 +92,12 @@
         }
         .copy-btn {
             background-color: #007bff;
-            color: white;
         }
         .copy-btn:hover {
             background-color: #0056b3;
         }
         .deactivate-btn {
             background-color: #dc3545;
-            color: white;
         }
         .deactivate-btn:hover {
             background-color: #c82333;
@@ -98,90 +109,143 @@
         <h2>Add New Quiz</h2>
         <div class="form-group">
             <label for="spreadsheet-id">Google Spreadsheet ID:</label>
-            <input type="text" id="spreadsheet-id" value="1iLVdJFT81Hook892TzLyBF-hMLC_B2z_dO7FXp9uZd4" placeholder="Enter spreadsheet ID">
+            <input type="text" id="spreadsheet-id" placeholder="Enter spreadsheet ID">
         </div>
         <div class="form-group">
-            <label for="tab-name">Tab Name:</label>
-            <input type="text" id="tab-name" value="SHEVA" placeholder="Enter tab name">
+            <label for="tab-name">Sheet Name:</label>
+            <select id="tab-name" disabled>
+                <option value="">Select a sheet</option>
+            </select>
+            <div id="loading-tabs">Loading available sheets...</div>
         </div>
-        <button onclick="createQuiz()">Create Quiz</button>
+        <div class="button-group">
+            <button onclick="testConnection()" id="test-btn">Test Connection</button>
+            <button onclick="createQuiz()" id="create-btn">Start Quiz</button>
+        </div>
     </div>
 
     <div class="admin-section">
-        <h2>Active Quiz Links</h2>
-        <div id="quiz-links">
-            <!-- Quiz links will be displayed here -->
-        </div>
+        <h2>Active Quizzes</h2>
+        <div id="quiz-links"></div>
     </div>
 
     <script>
-        function createQuiz() {
+        let debounceTimer;
+        const spreadsheetInput = document.getElementById('spreadsheet-id');
+        const tabSelect = document.getElementById('tab-name');
+        const loadingTabs = document.getElementById('loading-tabs');
+        const testBtn = document.getElementById('test-btn');
+        const createBtn = document.getElementById('create-btn');
+
+        spreadsheetInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (this.value.trim()) {
+                    fetchTabs(this.value.trim());
+                } else {
+                    resetTabSelect();
+                }
+            }, 500);
+        });
+
+        function resetTabSelect() {
+            tabSelect.innerHTML = '<option value="">Select a sheet</option>';
+            tabSelect.disabled = true;
+            loadingTabs.style.display = 'none';
+        }
+
+        async function fetchTabs(spreadsheetId) {
+            resetTabSelect();
+            loadingTabs.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/get_tabs/${spreadsheetId}`);
+                const tabs = await response.json();
+                
+                if (Array.isArray(tabs)) {
+                    tabSelect.innerHTML = '<option value="">Select a sheet</option>';
+                    tabs.forEach(tab => {
+                        const option = document.createElement('option');
+                        option.value = tab;
+                        option.textContent = tab;
+                        tabSelect.appendChild(option);
+                    });
+                    tabSelect.disabled = false;
+                } else {
+                    throw new Error('Invalid response from server');
+                }
+            } catch (error) {
+                console.error('Error fetching tabs:', error);
+                tabSelect.innerHTML = '<option value="">Error loading sheets</option>';
+            } finally {
+                loadingTabs.style.display = 'none';
+            }
+        }
+
+        async function testConnection() {
             const spreadsheetId = document.getElementById('spreadsheet-id').value;
             const tabName = document.getElementById('tab-name').value;
             
             if (!spreadsheetId || !tabName) {
-                alert('Please enter both Spreadsheet ID and Tab Name');
+                alert('Please enter both Spreadsheet ID and select a Sheet');
                 return;
             }
+
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
             
+            try {
+                const response = await fetch(`/test_sheet/${spreadsheetId}/${tabName}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`Connection successful! Found ${result.rows_found} rows.`);
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            } catch (error) {
+                alert('Error testing connection: ' + error.message);
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = 'Test Connection';
+            }
+        }
+
+        async function createQuiz() {
+            const spreadsheetId = document.getElementById('spreadsheet-id').value;
+            const tabName = document.getElementById('tab-name').value;
+            
+            if (!spreadsheetId || !tabName) {
+                alert('Please enter both Spreadsheet ID and select a Sheet');
+                return;
+            }
+
             const quizUrl = `/quiz/${spreadsheetId}/${tabName}`;
-            addQuizLink(spreadsheetId, tabName, quizUrl);
+            window.location.href = quizUrl;
         }
 
         function addQuizLink(spreadsheetId, tabName, quizUrl) {
-            const linksDiv = document.getElementById('quiz-links');
-            const linkId = `quiz-${spreadsheetId}-${tabName}`;
+            const quizLinksDiv = document.getElementById('quiz-links');
+            const quizLinkDiv = document.createElement('div');
+            quizLinkDiv.className = 'quiz-link';
             
-            // Check if quiz already exists
-            if (document.getElementById(linkId)) {
-                return;
-            }
-            
-            const quizDiv = document.createElement('div');
-            quizDiv.id = linkId;
-            quizDiv.className = 'quiz-link';
-            
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'quiz-info';
-            infoDiv.innerHTML = `
-                <div class="sheet-name">Sheet: ${tabName}</div>
-                <a href="${quizUrl}" target="_blank" class="quiz-url">Open Quiz</a>
+            quizLinkDiv.innerHTML = `
+                <div class="quiz-info">
+                    <div class="sheet-name">${tabName}</div>
+                    <a href="${quizUrl}" target="_blank" class="quiz-url">${quizUrl}</a>
+                </div>
+                <div class="button-group">
+                    <button class="copy-btn" onclick="navigator.clipboard.writeText('${quizUrl}')">
+                        Copy Link
+                    </button>
+                    <button class="deactivate-btn" onclick="this.closest('.quiz-link').remove()">
+                        Remove
+                    </button>
+                </div>
             `;
             
-            const buttonGroup = document.createElement('div');
-            buttonGroup.className = 'button-group';
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-btn';
-            copyBtn.textContent = 'Copy URL';
-            copyBtn.onclick = () => {
-                const fullUrl = window.location.origin + quizUrl;
-                navigator.clipboard.writeText(fullUrl);
-                copyBtn.textContent = 'Copied!';
-                setTimeout(() => copyBtn.textContent = 'Copy URL', 2000);
-            };
-            
-            const deactivateBtn = document.createElement('button');
-            deactivateBtn.className = 'deactivate-btn';
-            deactivateBtn.textContent = 'Deactivate';
-            deactivateBtn.onclick = () => {
-                quizDiv.remove();
-            };
-            
-            buttonGroup.appendChild(copyBtn);
-            buttonGroup.appendChild(deactivateBtn);
-            quizDiv.appendChild(infoDiv);
-            quizDiv.appendChild(buttonGroup);
-            linksDiv.appendChild(quizDiv);
+            quizLinksDiv.appendChild(quizLinkDiv);
         }
-
-        // Load initial quiz
-        window.onload = function() {
-            const spreadsheetId = '1iLVdJFT81Hook892TzLyBF-hMLC_B2z_dO7FXp9uZd4';
-            const tabName = 'SHEVA';
-            const quizUrl = `/quiz/${spreadsheetId}/${tabName}`;
-            addQuizLink(spreadsheetId, tabName, quizUrl);
-        };
     </script>
 </body>
 </html>
