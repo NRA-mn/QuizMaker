@@ -251,8 +251,18 @@
         let wrongAnswers = [];
         let currentScore = 0;
         let totalQuestions = {{ question.total if question else 0 }};
+        let isProcessingAnswer = false;
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
         
         function submitAnswer(answer) {
+            if (isProcessingAnswer) return;
+            isProcessingAnswer = true;
+            
             // Disable all answer buttons
             const buttons = document.querySelectorAll('.answers button');
             buttons.forEach(btn => btn.disabled = true);
@@ -283,7 +293,7 @@
                 } else {
                     feedback.className = 'feedback incorrect';
                     feedbackBox.className = 'feedback-box incorrect';
-                    feedback.innerHTML = `Incorrect.<br><span class="correct-answer-text">The correct answer was: ${data.correct_answer}</span>`;
+                    feedback.innerHTML = `Incorrect.<br><span class="correct-answer-text">The correct answer was: ${escapeHtml(data.correct_answer)}</span>`;
                     // Store wrong answer for review
                     wrongAnswers = data.wrong_answers;
                     // Highlight correct and incorrect answers
@@ -312,6 +322,11 @@
             .catch(error => {
                 console.error('Error:', error);
                 showError('Failed to submit answer');
+                // Re-enable buttons on error
+                buttons.forEach(btn => btn.disabled = false);
+            })
+            .finally(() => {
+                isProcessingAnswer = false;
             });
         }
         
@@ -344,13 +359,20 @@
             const container = document.getElementById('question-container');
             container.innerHTML = `
                 <div class="question-number">Question ${data.current} of ${data.total}</div>
-                <div id="question-text">${data.question}</div>
+                <div id="question-text">${escapeHtml(data.question)}</div>
                 <div class="answers">
                     ${data.answers.map(answer => `
-                        <button onclick="submitAnswer('${answer}')">${answer}</button>
+                        <button onclick="submitAnswer('${escapeHtml(answer.replace(/'/g, "\\'"))}')">${escapeHtml(answer)}</button>
                     `).join('')}
                 </div>
             `;
+            
+            // Make sure all buttons are enabled for the new question
+            const buttons = container.querySelectorAll('.answers button');
+            buttons.forEach(btn => {
+                btn.disabled = false;
+                btn.classList.remove('correct', 'incorrect');
+            });
             
             // Update progress bar
             const progress = ((data.current - 1) / totalQuestions) * 100;
