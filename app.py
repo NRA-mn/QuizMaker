@@ -139,10 +139,21 @@ def get_tabs(spreadsheet_id):
     try:
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
         creds = None
-        if os.path.exists('credentials.json'):
+        
+        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+        if google_creds:
+            print("Found GOOGLE_CREDENTIALS in environment, loading...")
+            creds_dict = json.loads(google_creds)
+            creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        elif os.path.exists('credentials.json'):
+            print("Found credentials.json, loading...")
             creds = service_account.Credentials.from_service_account_file(
                 'credentials.json', scopes=SCOPES)
+        else:
+            print("ERROR: No credentials found!")
+            raise ValueError("No credentials found")
 
+        print("Building sheets service...")
         service = build('sheets', 'v4', credentials=creds)
         sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheets = sheet_metadata.get('sheets', '')
@@ -150,6 +161,7 @@ def get_tabs(spreadsheet_id):
         
         return jsonify(titles)
     except Exception as e:
+        print(f"Error in get_tabs: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/quiz/<spreadsheet_id>/<tab_name>')

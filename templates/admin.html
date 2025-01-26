@@ -42,13 +42,15 @@
             cursor: not-allowed;
         }
         button {
-            padding: 8px 15px;
+            width: 100%;
+            padding: 10px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 16px;
             background-color: #4CAF50;
             color: white;
+            margin-top: 10px;
         }
         button:disabled {
             background-color: #cccccc;
@@ -61,6 +63,7 @@
             color: #666;
             font-style: italic;
             display: none;
+            margin-top: 5px;
         }
         .quiz-link {
             background: #f8f9fa;
@@ -118,10 +121,7 @@
             </select>
             <div id="loading-tabs">Loading available sheets...</div>
         </div>
-        <div class="button-group">
-            <button onclick="testConnection()" id="test-btn">Test Connection</button>
-            <button onclick="createQuiz()" id="create-btn">Start Quiz</button>
-        </div>
+        <button onclick="createQuiz()" id="create-btn">Start Quiz</button>
     </div>
 
     <div class="admin-section">
@@ -134,7 +134,6 @@
         const spreadsheetInput = document.getElementById('spreadsheet-id');
         const tabSelect = document.getElementById('tab-name');
         const loadingTabs = document.getElementById('loading-tabs');
-        const testBtn = document.getElementById('test-btn');
         const createBtn = document.getElementById('create-btn');
 
         spreadsheetInput.addEventListener('input', function() {
@@ -160,11 +159,15 @@
             
             try {
                 const response = await fetch(`/get_tabs/${spreadsheetId}`);
-                const tabs = await response.json();
+                const data = await response.json();
                 
-                if (Array.isArray(tabs)) {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                if (Array.isArray(data)) {
                     tabSelect.innerHTML = '<option value="">Select a sheet</option>';
-                    tabs.forEach(tab => {
+                    data.forEach(tab => {
                         const option = document.createElement('option');
                         option.value = tab;
                         option.textContent = tab;
@@ -179,35 +182,6 @@
                 tabSelect.innerHTML = '<option value="">Error loading sheets</option>';
             } finally {
                 loadingTabs.style.display = 'none';
-            }
-        }
-
-        async function testConnection() {
-            const spreadsheetId = document.getElementById('spreadsheet-id').value;
-            const tabName = document.getElementById('tab-name').value;
-            
-            if (!spreadsheetId || !tabName) {
-                alert('Please enter both Spreadsheet ID and select a Sheet');
-                return;
-            }
-
-            testBtn.disabled = true;
-            testBtn.textContent = 'Testing...';
-            
-            try {
-                const response = await fetch(`/test_sheet/${spreadsheetId}/${tabName}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`Connection successful! Found ${result.rows_found} rows.`);
-                } else {
-                    alert(`Error: ${result.error}`);
-                }
-            } catch (error) {
-                alert('Error testing connection: ' + error.message);
-            } finally {
-                testBtn.disabled = false;
-                testBtn.textContent = 'Test Connection';
             }
         }
 
