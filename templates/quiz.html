@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quiz</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f5f5f5;
+            min-height: 100vh;
+        }
+        .container {
+            padding: 2rem;
+            width: 90%;
+            max-width: 600px;
+            margin: 0 auto;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        .question-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            height: 400px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+        .feedback-section {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 1rem;
+        }
+        .feedback-box {
+            display: none;
+            background: white;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 100%;
+            border: 2px solid;
+            box-sizing: border-box;
+        }
+        .feedback-box.correct {
+            border-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .feedback-box.incorrect {
+            border-color: #dc3545;
+            background-color: #fff8f8;
+        }
+        .feedback-box .feedback {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+        .feedback-box .feedback .correct-answer-text {
+            display: block;
+            margin-top: 0.5rem;
+            font-weight: normal;
+        }
+        .feedback-box .continue-btn {
+            font-size: 1rem;
+            padding: 8px 20px;
+            width: auto;
+            display: inline-block;
+        }
+        .question-number {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        #question-text {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            color: #1a237e;
+        }
+        .answers {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .error {
+            color: #dc3545;
+            margin: 1rem 0;
+        }
+        .error pre {
+            text-align: left;
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 1rem;
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            background-color: #218838;
+            transform: translateY(-1px);
+        }
+        .answers button {
+            display: block;
+            width: 100%;
+            margin: 0.5rem 0;
+            text-align: left;
+            background-color: #f8f9fa;
+            color: #1a237e;
+            border: 1px solid #ddd;
+        }
+        .answers button:hover:not([disabled]) {
+            background-color: #e9ecef;
+        }
+        .answers button.correct {
+            background-color: #28a745 !important;
+            color: white;
+        }
+        .answers button.incorrect {
+            background-color: #dc3545 !important;
+            color: white;
+        }
+        #score-container {
+            text-align: center;
+        }
+        #final-score {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .wrong-answers {
+            margin-top: 1.5rem;
+            text-align: left;
+            color: #666;
+        }
+        .wrong-answer-item {
+            margin: 0.5rem 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #eee;
+        }
+        .wrong-answer-item:last-child {
+            border-bottom: none;
+        }
+        .wrong-answer-item .question {
+            font-weight: normal;
+            margin-bottom: 0.25rem;
+        }
+        .wrong-answer-item .your-answer,
+        .wrong-answer-item .correct-answer {
+            font-size: 0.9rem;
+        }
+        #wrong-answers-btn {
+            color: #666;
+            background: none;
+            border: 1px solid #ddd;
+            padding: 6px 12px;
+            font-size: 0.9rem;
+        }
+        #wrong-answers-btn:hover {
+            background: #f5f5f5;
+            transform: none;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if error %}
+            <h2 class="error">Error</h2>
+            <div class="error">
+                <p>{{ error }}</p>
+                {% if debug_info %}
+                <pre>{{ debug_info }}</pre>
+                {% endif %}
+            </div>
+            <button onclick="window.location.reload()">Try Again</button>
+        {% else %}
+            <div id="quiz-content">
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="question-section">
+                    <div id="question-container">
+                        {% if question %}
+                            <div class="question-number">Question {{ question.current }} of {{ question.total }}</div>
+                            <div id="question-text">{{ question.question }}</div>
+                            <div class="answers">
+                                {% for answer in question.answers %}
+                                    <button onclick="submitAnswer('{{ answer }}')">{{ answer }}</button>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="feedback-section">
+                    <div id="feedback-box" class="feedback-box">
+                        <div id="feedback" class="feedback"></div>
+                        <button id="continue-btn" class="continue-btn" onclick="loadNextQuestion()">Continue</button>
+                    </div>
+                    <div id="wrong-answers-section">
+                        <button id="wrong-answers-btn" onclick="toggleWrongAnswers()" style="display: none;">Show Past Wrong Answers</button>
+                        <div id="wrong-answers" class="wrong-answers" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="bottom-info">
+                <div id="current-score">Score: <span>0</span> correct</div>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if not error %}
+    <script>
+        let wrongAnswers = [];
+        let currentScore = 0;
+        let totalQuestions = {{ question.total if question else 0 }};
+        
+        function submitAnswer(answer) {
+            // Disable all answer buttons
+            const buttons = document.querySelectorAll('.answers button');
+            buttons.forEach(btn => btn.disabled = true);
+            
+            fetch('/check_answer', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ answer: answer })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const feedback = document.getElementById('feedback');
+                const feedbackBox = document.getElementById('feedback-box');
+                
+                if (data.correct) {
+                    currentScore++;
+                    feedback.className = 'feedback correct';
+                    feedbackBox.className = 'feedback-box correct';
+                    feedback.textContent = 'Correct!';
+                    // Find and highlight the correct answer
+                    buttons.forEach(btn => {
+                        if (btn.textContent === answer) {
+                            btn.classList.add('correct');
+                        }
+                    });
+                } else {
+                    feedback.className = 'feedback incorrect';
+                    feedbackBox.className = 'feedback-box incorrect';
+                    feedback.innerHTML = `Incorrect.<br><span class="correct-answer-text">The correct answer was: ${data.correct_answer}</span>`;
+                    // Store wrong answer for review
+                    wrongAnswers = data.wrong_answers;
+                    // Highlight correct and incorrect answers
+                    buttons.forEach(btn => {
+                        if (btn.textContent === answer) {
+                            btn.classList.add('incorrect');
+                        } else if (btn.textContent === data.correct_answer) {
+                            btn.classList.add('correct');
+                        }
+                    });
+                }
+                
+                // Update current score
+                document.querySelector('#current-score span').textContent = currentScore;
+                
+                // Show feedback box
+                feedbackBox.style.display = 'block';
+                
+                // Update progress bar
+                const progress = (document.querySelector('.question-number').textContent.split(' ')[1] / totalQuestions) * 100;
+                document.querySelector('.progress-bar').style.width = `${progress}%`;
+                
+                // Update wrong answers section
+                updateWrongAnswersSection();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError('Failed to submit answer');
+            });
+        }
+        
+        function loadNextQuestion() {
+            // Hide feedback box
+            document.getElementById('feedback-box').style.display = 'none';
+            
+            fetch('/get_question')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.complete) {
+                        showFinalScore(data.score);
+                    } else {
+                        displayQuestion(data);
+                        wrongAnswers = data.wrong_answers;
+                        updateWrongAnswersSection();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showError('Failed to load next question');
+                });
+        }
+        
+        function displayQuestion(data) {
+            // Hide feedback box
+            document.getElementById('feedback-box').style.display = 'none';
+            
+            // Update question container contents without changing its position
+            const container = document.getElementById('question-container');
+            container.innerHTML = `
+                <div class="question-number">Question ${data.current} of ${data.total}</div>
+                <div id="question-text">${data.question}</div>
+                <div class="answers">
+                    ${data.answers.map(answer => `
+                        <button onclick="submitAnswer('${answer}')">${answer}</button>
+                    `).join('')}
+                </div>
+            `;
+            
+            // Update progress bar
+            const progress = ((data.current - 1) / totalQuestions) * 100;
+            document.querySelector('.progress-bar').style.width = `${progress}%`;
+        }
+        
+        function showFinalScore(score) {
+            document.getElementById('question-container').style.display = 'none';
+            document.getElementById('feedback-box').style.display = 'none';
+            document.getElementById('score-container').style.display = 'block';
+            document.getElementById('final-score').textContent = score;
+            
+            // Update final progress bar
+            document.querySelector('.progress-bar').style.width = '100%';
+            
+            // Update wrong answers section
+            updateWrongAnswersSection();
+        }
+        
+        function updateWrongAnswersSection() {
+            const btn = document.getElementById('wrong-answers-btn');
+            if (wrongAnswers && wrongAnswers.length > 0) {
+                btn.style.display = 'block';
+                btn.textContent = document.getElementById('wrong-answers').style.display === 'none' ? 
+                    `Show Past Wrong Answers (${wrongAnswers.length})` : 'Hide Past Wrong Answers';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+        
+        function toggleWrongAnswers() {
+            const container = document.getElementById('wrong-answers');
+            const btn = document.getElementById('wrong-answers-btn');
+            
+            if (container.style.display === 'none') {
+                if (wrongAnswers.length === 0) {
+                    container.innerHTML = '<p>No wrong answers yet!</p>';
+                } else {
+                    container.innerHTML = wrongAnswers.map((item, index) => `
+                        <div class="wrong-answer-item">
+                            <div class="question">${index + 1}. ${item.question}</div>
+                            <div class="your-answer">Your answer: ${item.yourAnswer}</div>
+                            <div class="correct-answer">Correct answer: ${item.correctAnswer}</div>
+                        </div>
+                    `).join('');
+                }
+                container.style.display = 'block';
+                btn.textContent = 'Hide Past Wrong Answers';
+            } else {
+                container.style.display = 'none';
+                btn.textContent = `Show Past Wrong Answers (${wrongAnswers.length})`;
+            }
+        }
+        
+        function showError(message) {
+            const container = document.querySelector('.container');
+            container.innerHTML = `
+                <h2 class="error">Error</h2>
+                <p class="error">${message}</p>
+                <button onclick="window.location.reload()">Try Again</button>
+            `;
+        }
+        
+        // Initialize wrong answers section
+        updateWrongAnswersSection();
+    </script>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Development
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# Credentials
+credentials.json
+token.json
+
+# Node (legacy)
+node_modules/

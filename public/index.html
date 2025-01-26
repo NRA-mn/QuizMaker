@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Selection</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div id="quiz-selection" class="quiz-selection">
+            <h1>Quiz Maker</h1>
+            <div id="quiz-buttons"></div>
+        </div>
+        <div id="quiz-container" style="display: none;">
+            <div id="question-container">
+                <h2 id="question-text"></h2>
+                <div id="answers-container"></div>
+            </div>
+            <div id="progress-container">
+                <div id="score">Score: <span id="score-value">0</span></div>
+                <div id="question-number">Question: <span id="current-question">0</span>/<span id="total-questions">0</span></div>
+            </div>
+            <button id="back-to-selection" class="back-button" onclick="showQuizSelection()">← Back to Quiz Selection</button>
+        </div>
+        <div id="admin-panel" style="display: none;">
+            <h2>Admin Panel</h2>
+            <div class="admin-section">
+                <h3>1. Connect Spreadsheet</h3>
+                <div id="spreadsheet-link">
+                    <input type="text" id="spreadsheet-id" placeholder="Enter Google Spreadsheet ID">
+                    <button onclick="updateSpreadsheetId()">Connect</button>
+                </div>
+            </div>
+            <div class="admin-section">
+                <h3>2. Manage Quizzes</h3>
+                <div id="sheet-selection">
+                    <select id="sheet-selector"></select>
+                    <button onclick="activateQuiz()">Activate Quiz</button>
+                </div>
+                <div id="active-quizzes">
+                    <h4>Active Quizzes</h4>
+                    <div id="active-quizzes-list"></div>
+                </div>
+            </div>
+            <div class="admin-section">
+                <h3>Current Quiz Status</h3>
+                <div id="current-quiz-status">
+                    <p>Active Sheet: <span id="active-sheet-name">None</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

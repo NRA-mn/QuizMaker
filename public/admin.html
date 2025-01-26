@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quiz Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .input-field {
+            width: 300px;
+            padding: 8px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .active-quiz-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        .quiz-url {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .deactivate-button {
+            padding: 5px 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .deactivate-button:hover {
+            background-color: #da190b;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Quiz Admin</h1>
+        
+        <div class="section">
+            <h2>1. Connect to Google Sheet</h2>
+            <div class="form-group">
+                <label for="spreadsheet-id">Google Spreadsheet ID:</label><br>
+                <input type="text" id="spreadsheet-id" class="input-field" placeholder="Enter Google Spreadsheet ID">
+                <button onclick="updateSpreadsheetId()" class="button">Connect</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>2. Activate Quiz</h2>
+            <div class="form-group">
+                <label for="sheet-selector">Select Sheet (Tab):</label><br>
+                <select id="sheet-selector" class="input-field">
+                    <option value="">Select a sheet</option>
+                </select>
+                <button onclick="activateQuiz()" class="button">Activate Quiz</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>3. Active Quizzes</h2>
+            <div id="active-quizzes-list"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load spreadsheet ID from localStorage if available
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedId = localStorage.getItem('spreadsheetId');
+            if (savedId) {
+                document.getElementById('spreadsheet-id').value = savedId;
+                loadSheets();
+            }
+        });
+
+        async function updateSpreadsheetId() {
+            const spreadsheetId = document.getElementById('spreadsheet-id').value;
+            if (!spreadsheetId) {
+                alert('Please enter a spreadsheet ID');
+                return;
+            }
+
+            localStorage.setItem('spreadsheetId', spreadsheetId);
+            await loadSheets();
+        }
+
+        async function loadSheets() {
+            try {
+                const response = await fetch('/api/sheets');
+                const data = await response.json();
+                
+                // Populate sheet selector
+                const sheetSelector = document.getElementById('sheet-selector');
+                sheetSelector.innerHTML = '<option value="">Select a sheet</option>';
+                
+                data.sheets.forEach(sheet => {
+                    const option = document.createElement('option');
+                    option.value = sheet;
+                    option.textContent = sheet;
+                    sheetSelector.appendChild(option);
+                });
+
+                // Display active quizzes
+                displayActiveQuizzes(data.activeQuizzes);
+            } catch (error) {
+                console.error('Error loading sheets:', error);
+                alert('Failed to load available sheets');
+            }
+        }
+
+        function displayActiveQuizzes(activeQuizzes) {
+            const activeQuizzesList = document.getElementById('active-quizzes-list');
+            activeQuizzesList.innerHTML = '';
+
+            if (activeQuizzes.length === 0) {
+                activeQuizzesList.innerHTML = '<p>No active quizzes</p>';
+                return;
+            }
+
+            activeQuizzes.forEach(quiz => {
+                const quizItem = document.createElement('div');
+                quizItem.className = 'active-quiz-item';
+
+                const quizUrl = document.createElement('div');
+                quizUrl.className = 'quiz-url';
+                const url = `${window.location.origin}/quiz/${quiz}`;
+                quizUrl.innerHTML = `
+                    <strong>${quiz}</strong><br>
+                    <a href="${url}" target="_blank">${url}</a>
+                `;
+
+                const deactivateButton = document.createElement('button');
+                deactivateButton.className = 'deactivate-button';
+                deactivateButton.textContent = 'Deactivate';
+                deactivateButton.onclick = () => deactivateQuiz(quiz);
+
+                quizItem.appendChild(quizUrl);
+                quizItem.appendChild(deactivateButton);
+                activeQuizzesList.appendChild(quizItem);
+            });
+        }
+
+        async function activateQuiz() {
+            const sheetSelector = document.getElementById('sheet-selector');
+            const selectedSheet = sheetSelector.value;
+            
+            if (!selectedSheet) {
+                alert('Please select a sheet');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/quizzes/activate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        sheetName: selectedSheet
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayActiveQuizzes(data.activeQuizzes);
+                    sheetSelector.value = ''; // Reset the selector
+                } else {
+                    alert('Failed to activate quiz');
+                }
+            } catch (error) {
+                console.error('Error activating quiz:', error);
+                alert('Failed to activate quiz');
+            }
+        }
+
+        async function deactivateQuiz(sheetName) {
+            try {
+                const response = await fetch('/api/quizzes/deactivate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ sheetName }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayActiveQuizzes(data.activeQuizzes);
+                } else {
+                    alert('Failed to deactivate quiz');
+                }
+            } catch (error) {
+                console.error('Error deactivating quiz:', error);
+                alert('Failed to deactivate quiz');
+            }
+        }
+    </script>
+</body>
+</html>

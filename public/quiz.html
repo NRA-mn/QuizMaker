@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quiz</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="quiz-container">
+        <div id="question-container">
+            <h2 id="question"></h2>
+            <div id="answers"></div>
+            <div id="answer-feedback"></div>
+            <button id="continue-btn" style="display: none;">Continue</button>
+        </div>
+        <div id="progress-container">
+            <div id="progress-bar">
+                <div id="progress-fill"></div>
+            </div>
+            <div id="progress-text">Question <span id="current-question">0</span>/<span id="total-questions">0</span></div>
+            <div id="score">Score: <span id="score-value">0</span></div>
+        </div>
+    </div>
+    <script>
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let quizName = window.location.pathname.split('/').pop();
+
+        async function startQuiz() {
+            try {
+                const response = await fetch(`/api/questions/${quizName}`);
+                if (!response.ok) {
+                    throw new Error('Quiz not found or not active');
+                }
+                questions = await response.json();
+                document.getElementById('total-questions').textContent = questions.length;
+                showQuestion();
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('quiz-container').innerHTML = '<h2>Quiz not found or no longer active</h2>';
+            }
+        }
+
+        function showQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                showFinalScore();
+                return;
+            }
+
+            const question = questions[currentQuestionIndex];
+            document.getElementById('question').textContent = question.question;
+            document.getElementById('current-question').textContent = currentQuestionIndex + 1;
+            
+            const answersContainer = document.getElementById('answers');
+            const answerFeedback = document.getElementById('answer-feedback');
+            answersContainer.innerHTML = '';
+            answerFeedback.innerHTML = '';
+            
+            question.answers.forEach((answer, index) => {
+                const button = document.createElement('button');
+                button.className = 'answer-button';
+                button.textContent = answer.text;
+                button.onclick = () => checkAnswer(answer.correct, button, answer.text);
+                answersContainer.appendChild(button);
+            });
+        }
+
+        function checkAnswer(isCorrect, selectedButton, selectedAnswer) {
+            const buttons = document.querySelectorAll('.answer-button');
+            const answerFeedback = document.getElementById('answer-feedback');
+            answerFeedback.innerHTML = '';
+
+            // First, find the correct answer
+            const correctAnswer = questions[currentQuestionIndex].answers.find(a => a.correct).text;
+
+            // Disable all buttons and show correct answer
+            buttons.forEach(button => {
+                button.disabled = true;
+                if (button.textContent === correctAnswer) {
+                    button.className = 'answer-button correct';
+                }
+            });
+
+            // Show selected answer as correct or incorrect
+            selectedButton.className = isCorrect ? 'answer-button correct' : 'answer-button incorrect';
+
+            // Show feedback and continue button
+            if (isCorrect) {
+                score++;
+                document.getElementById('score-value').textContent = score;
+                answerFeedback.innerHTML = `
+                    <div class="feedback-message correct">
+                        <p>Correct!</p>
+                        <button class="continue-button" onclick="nextQuestion()">Continue →</button>
+                    </div>
+                `;
+            } else {
+                answerFeedback.innerHTML = `
+                    <div class="feedback-message incorrect">
+                        <p>Incorrect. The correct answer is:</p>
+                        <p class="correct-answer">${correctAnswer}</p>
+                        <button class="continue-button" onclick="nextQuestion()">Continue →</button>
+                    </div>
+                `;
+            }
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            showQuestion();
+        }
+
+        function showFinalScore() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = `
+                <h2>Quiz Complete!</h2>
+                <p>Final Score: ${score} out of ${questions.length}</p>
+            `;
+        }
+
+        // Start the quiz when the page loads
+        startQuiz();
+    </script>
+</body>
+</html>

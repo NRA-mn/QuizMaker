@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quiz Admin</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .admin-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            background-color: #4CAF50;
+            color: white;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .quiz-link {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .quiz-info {
+            flex-grow: 1;
+        }
+        .quiz-info .sheet-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .quiz-url {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .quiz-url:hover {
+            text-decoration: underline;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        .copy-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        .copy-btn:hover {
+            background-color: #0056b3;
+        }
+        .deactivate-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        .deactivate-btn:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-section">
+        <h2>Add New Quiz</h2>
+        <div class="form-group">
+            <label for="spreadsheet-id">Google Spreadsheet ID:</label>
+            <input type="text" id="spreadsheet-id" value="1iLVdJFT81Hook892TzLyBF-hMLC_B2z_dO7FXp9uZd4" placeholder="Enter spreadsheet ID">
+        </div>
+        <div class="form-group">
+            <label for="tab-name">Tab Name:</label>
+            <input type="text" id="tab-name" value="SHEVA" placeholder="Enter tab name">
+        </div>
+        <button onclick="createQuiz()">Create Quiz</button>
+    </div>
+
+    <div class="admin-section">
+        <h2>Active Quiz Links</h2>
+        <div id="quiz-links">
+            <!-- Quiz links will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        function createQuiz() {
+            const spreadsheetId = document.getElementById('spreadsheet-id').value;
+            const tabName = document.getElementById('tab-name').value;
+            
+            if (!spreadsheetId || !tabName) {
+                alert('Please enter both Spreadsheet ID and Tab Name');
+                return;
+            }
+            
+            const quizUrl = `/quiz/${spreadsheetId}/${tabName}`;
+            addQuizLink(spreadsheetId, tabName, quizUrl);
+        }
+
+        function addQuizLink(spreadsheetId, tabName, quizUrl) {
+            const linksDiv = document.getElementById('quiz-links');
+            const linkId = `quiz-${spreadsheetId}-${tabName}`;
+            
+            // Check if quiz already exists
+            if (document.getElementById(linkId)) {
+                return;
+            }
+            
+            const quizDiv = document.createElement('div');
+            quizDiv.id = linkId;
+            quizDiv.className = 'quiz-link';
+            
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'quiz-info';
+            infoDiv.innerHTML = `
+                <div class="sheet-name">Sheet: ${tabName}</div>
+                <a href="${quizUrl}" target="_blank" class="quiz-url">Open Quiz</a>
+            `;
+            
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'button-group';
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.textContent = 'Copy URL';
+            copyBtn.onclick = () => {
+                const fullUrl = window.location.origin + quizUrl;
+                navigator.clipboard.writeText(fullUrl);
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => copyBtn.textContent = 'Copy URL', 2000);
+            };
+            
+            const deactivateBtn = document.createElement('button');
+            deactivateBtn.className = 'deactivate-btn';
+            deactivateBtn.textContent = 'Deactivate';
+            deactivateBtn.onclick = () => {
+                quizDiv.remove();
+            };
+            
+            buttonGroup.appendChild(copyBtn);
+            buttonGroup.appendChild(deactivateBtn);
+            quizDiv.appendChild(infoDiv);
+            quizDiv.appendChild(buttonGroup);
+            linksDiv.appendChild(quizDiv);
+        }
+
+        // Load initial quiz
+        window.onload = function() {
+            const spreadsheetId = '1iLVdJFT81Hook892TzLyBF-hMLC_B2z_dO7FXp9uZd4';
+            const tabName = 'SHEVA';
+            const quizUrl = `/quiz/${spreadsheetId}/${tabName}`;
+            addQuizLink(spreadsheetId, tabName, quizUrl);
+        };
+    </script>
+</body>
+</html>
