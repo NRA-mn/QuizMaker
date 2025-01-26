@@ -1,13 +1,15 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_session import Session
 from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from google.oauth2 import service_account
 import random
 import os
 from dotenv import load_dotenv
 import json
 import tempfile
+import pathlib
 
 app = Flask(__name__)
 
@@ -20,25 +22,27 @@ Session(app)
 
 load_dotenv()
 
+# OAuth 2.0 configuration
+CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
+CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+
 def get_sheet_data(spreadsheet_id, tab_name):
     print(f"\n=== LOADING SHEET DATA ===")
     print(f"Loading sheet data for spreadsheet {spreadsheet_id}, tab {tab_name}")
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-    creds = None
+    
+    if 'credentials' not in session:
+        return redirect(url_for('login'))
     
     try:
-        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
-        if google_creds:
-            print("Found GOOGLE_CREDENTIALS in environment, loading...")
-            creds_dict = json.loads(google_creds)
-            creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        elif os.path.exists('credentials.json'):
-            print("Found credentials.json, loading...")
-            creds = service_account.Credentials.from_service_account_file(
-                'credentials.json', scopes=SCOPES)
-        else:
-            print("ERROR: No credentials found!")
-            raise ValueError("No credentials found")
+        creds = Credentials(
+            token=session['credentials']['token'],
+            refresh_token=session['credentials']['refresh_token'],
+            token_uri=session['credentials']['token_uri'],
+            client_id=session['credentials']['client_id'],
+            client_secret=session['credentials']['client_secret'],
+            scopes=session['credentials']['scopes']
+        )
 
         print("Building sheets service...")
         service = build('sheets', 'v4', credentials=creds)
@@ -52,83 +56,69 @@ def get_sheet_data(spreadsheet_id, tab_name):
                                   range=range_name).execute()
         values = result.get('values', [])
         
-        print("\n=== RAW SPREADSHEET DATA ===")
-        for i, row in enumerate(values):
-            print(f"Row {i+1}: {row}")
-        print("=== END RAW DATA ===\n")
-        
         if not values:
-            print("ERROR: No data found in spreadsheet")
-            raise ValueError("No data found in spreadsheet")
-        
-        # Skip header rows
-        if len(values) > 2:
-            values = values[2:]  # Skip first two rows
-            print(f"Skipped 2 header rows, processing {len(values)} content rows")
-        
-        questions = []
-        for i, row in enumerate(values, start=3):
-            try:
-                print(f"\nProcessing row {i}: {row}")
-                
-                # Skip empty rows
-                if not row:
-                    print(f"Skipping empty row {i}")
-                    continue
-                    
-                # Get question text (column B)
-                if len(row) <= 1:
-                    print(f"Skipping row {i}: No question text column")
-                    continue
-                    
-                question_text = row[1].strip() if len(row) > 1 else ""
-                if not question_text:
-                    print(f"Skipping row {i}: Empty question text")
-                    continue
-                
-                # Get answers (starting from column C)
-                answers = []
-                for j in range(2, min(len(row), 6)):  # Only look at columns C through F
-                    if j < len(row) and row[j].strip():
-                        answers.append(row[j].strip())
-                
-                print(f"Row {i} - Found {len(answers)} answers: {answers}")
-                
-                if len(answers) < 2:
-                    print(f"Skipping row {i}: Not enough answers (need at least 2, got {len(answers)})")
-                    continue
-                
-                question = {
-                    'question': question_text,
-                    'correct_answer': answers[0],
-                    'answers': answers.copy()  # Make a copy to avoid reference issues
-                }
-                
-                questions.append(question)
-                print(f"Added question {len(questions)}: {question}")
-                
-            except Exception as row_error:
-                print(f"Error processing row {i}: {str(row_error)}")
-                continue
-        
-        print(f"\nSuccessfully loaded {len(questions)} questions")
-        if not questions:
-            raise ValueError("No valid questions found. Each question must have question text and at least 2 answers.")
-        
-        return questions
+            print("No data found in sheet")
+            return None
+            
+        print(f"Found {len(values)} rows of data")
+        return values
         
     except Exception as e:
-        print(f"\nERROR loading sheet data: {str(e)}")
-        print(f"Error type: {type(e)}")
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        raise ValueError(f"Failed to load questions: {str(e)}")
+        print(f"Error accessing sheet: {str(e)}")
+        return None
 
-def shuffle_multiple_times(items, times=5):
-    """Shuffle a list multiple times"""
-    for _ in range(times):
-        random.shuffle(items)
-    return items
+@app.route('/login')
+def login():
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [request.base_url + "/callback"]
+            }
+        },
+        scopes=SCOPES
+    )
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    
+    session['state'] = state
+    return redirect(authorization_url)
+
+@app.route('/login/callback')
+def callback():
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [url_for('callback', _external=True)]
+            }
+        },
+        scopes=SCOPES,
+        state=session['state']
+    )
+    
+    flow.fetch_token(authorization_response=request.url)
+    credentials = flow.credentials
+    
+    session['credentials'] = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
+    
+    return redirect(url_for('index'))
 
 @app.route('/')
 def index():
@@ -140,42 +130,37 @@ def get_tabs(spreadsheet_id):
         print("\n=== DEBUG: GET_TABS ===")
         print(f"Spreadsheet ID: {spreadsheet_id}")
         
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-        creds = None
+        if 'credentials' not in session:
+            return redirect(url_for('login'))
         
-        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
-        print(f"Environment has GOOGLE_CREDENTIALS: {bool(google_creds)}")
-        
-        if google_creds:
-            print("Loading credentials from environment variable...")
-            try:
-                creds_dict = json.loads(google_creds)
-                print("Successfully parsed credentials JSON")
-                creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-                print("Successfully created credentials from dict")
-            except Exception as e:
-                print(f"Error parsing credentials: {str(e)}")
-                raise
-        elif os.path.exists('credentials.json'):
-            print("Loading credentials from file...")
-            creds = service_account.Credentials.from_service_account_file(
-                'credentials.json', scopes=SCOPES)
-            print("Successfully loaded credentials from file")
-        else:
-            print("No credentials found!")
-            raise ValueError("No credentials found")
+        try:
+            creds = Credentials(
+                token=session['credentials']['token'],
+                refresh_token=session['credentials']['refresh_token'],
+                token_uri=session['credentials']['token_uri'],
+                client_id=session['credentials']['client_id'],
+                client_secret=session['credentials']['client_secret'],
+                scopes=session['credentials']['scopes']
+            )
 
-        print("Building sheets service...")
-        service = build('sheets', 'v4', credentials=creds)
-        print("Successfully built service")
+            print("Building sheets service...")
+            service = build('sheets', 'v4', credentials=creds)
+            print("Successfully built service")
+            
+            print("Getting sheet metadata...")
+            sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = sheet_metadata.get('sheets', '')
+            titles = [sheet['properties']['title'] for sheet in sheets]
+            print(f"Found sheets: {titles}")
+            
+            return jsonify(titles)
+        except Exception as e:
+            print(f"Error in get_tabs: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return jsonify({'error': str(e)}), 400
         
-        print("Getting sheet metadata...")
-        sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-        sheets = sheet_metadata.get('sheets', '')
-        titles = [sheet['properties']['title'] for sheet in sheets]
-        print(f"Found sheets: {titles}")
-        
-        return jsonify(titles)
     except Exception as e:
         print(f"Error in get_tabs: {str(e)}")
         print(f"Error type: {type(e)}")
@@ -199,6 +184,11 @@ def quiz(spreadsheet_id, tab_name):
         try:
             questions = get_sheet_data(spreadsheet_id, tab_name)
             print(f"Successfully loaded {len(questions)} questions")
+            
+            # Skip header rows
+            if len(questions) > 2:
+                questions = questions[2:]  # Skip first two rows
+                print(f"Skipped 2 header rows, processing {len(questions)} content rows")
             
             # Shuffle questions multiple times
             questions = shuffle_multiple_times(questions)
@@ -238,8 +228,8 @@ Traceback:
             # Get first question ready
             current_q = questions[0]
             first_question = {
-                'question': current_q['question'],
-                'answers': current_q['answers'],
+                'question': current_q[1].strip(),
+                'answers': current_q[2:6],
                 'current': 1,
                 'total': len(questions)
             }
@@ -277,8 +267,8 @@ def get_question():
         current_q = questions[current]
         return jsonify({
             'complete': False,
-            'question': current_q['question'],
-            'answers': current_q['answers'],
+            'question': current_q[1].strip(),
+            'answers': current_q[2:6],
             'current': current + 1,
             'total': len(questions),
             'wrong_answers': wrong_answers
@@ -302,16 +292,16 @@ def check_answer():
             return jsonify({'error': 'No question to check'}), 400
             
         current_q = questions[current]
-        is_correct = answer == current_q['correct_answer']
+        is_correct = answer == current_q[2].strip()
         
         if is_correct:
             session['score'] = session.get('score', 0) + 1
         else:
             # Store wrong answer
             wrong_answers.append({
-                'question': current_q['question'],
+                'question': current_q[1].strip(),
                 'yourAnswer': answer,
-                'correctAnswer': current_q['correct_answer']
+                'correctAnswer': current_q[2].strip()
             })
             session['wrong_answers'] = wrong_answers
             
@@ -319,7 +309,7 @@ def check_answer():
         
         return jsonify({
             'correct': is_correct,
-            'correct_answer': current_q['correct_answer'],
+            'correct_answer': current_q[2].strip(),
             'wrong_answers': wrong_answers
         })
         
@@ -334,39 +324,55 @@ def admin():
 @app.route('/test_sheet/<spreadsheet_id>/<tab_name>')
 def test_sheet(spreadsheet_id, tab_name):
     try:
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-        print("\n=== TESTING SHEET ACCESS ===")
+        if 'credentials' not in session:
+            return redirect(url_for('login'))
         
-        if not os.path.exists('credentials.json'):
-            return jsonify({"error": "credentials.json not found"})
+        try:
+            creds = Credentials(
+                token=session['credentials']['token'],
+                refresh_token=session['credentials']['refresh_token'],
+                token_uri=session['credentials']['token_uri'],
+                client_id=session['credentials']['client_id'],
+                client_secret=session['credentials']['client_secret'],
+                scopes=session['credentials']['scopes']
+            )
+
+            print("Building sheets service...")
+            service = build('sheets', 'v4', credentials=creds)
+            sheet = service.spreadsheets()
             
-        print("Loading credentials...")
-        creds = service_account.Credentials.from_service_account_file(
-            'credentials.json', scopes=SCOPES)
+            print(f"Attempting to read {tab_name}!A1:F")
+            result = sheet.values().get(
+                spreadsheetId=spreadsheet_id,
+                range=f'{tab_name}!A1:F'
+            ).execute()
             
-        print("Building service...")
-        service = build('sheets', 'v4', credentials=creds)
-        sheet = service.spreadsheets()
-        
-        print(f"Attempting to read {tab_name}!A1:F")
-        result = sheet.values().get(
-            spreadsheetId=spreadsheet_id,
-            range=f'{tab_name}!A1:F'
-        ).execute()
-        
-        values = result.get('values', [])
-        return jsonify({
-            "success": True,
-            "rows_found": len(values),
-            "first_few_rows": values[:3] if values else []
-        })
+            values = result.get('values', [])
+            return jsonify({
+                "success": True,
+                "rows_found": len(values),
+                "first_few_rows": values[:3] if values else []
+            })
+            
+        except Exception as e:
+            import traceback
+            return jsonify({
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
         
     except Exception as e:
+        print(f"Error in test_sheet: {str(e)}")
+        print(f"Error type: {type(e)}")
         import traceback
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        })
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 400
+
+def shuffle_multiple_times(items, times=5):
+    """Shuffle a list multiple times"""
+    for _ in range(times):
+        random.shuffle(items)
+    return items
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5002))
