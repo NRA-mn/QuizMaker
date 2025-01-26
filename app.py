@@ -130,6 +130,10 @@ def shuffle_multiple_times(items, times=5):
         random.shuffle(items)
     return items
 
+@app.route('/')
+def index():
+    return render_template('admin.html')
+
 @app.route('/get_tabs/<spreadsheet_id>')
 def get_tabs(spreadsheet_id):
     try:
