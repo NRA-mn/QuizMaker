@@ -105,6 +105,12 @@
         .deactivate-btn:hover {
             background-color: #c82333;
         }
+        .start-btn {
+            background-color: #4CAF50;
+        }
+        .start-btn:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
@@ -121,7 +127,7 @@
             </select>
             <div id="loading-tabs">Loading available sheets...</div>
         </div>
-        <button onclick="createQuiz()" id="create-btn">Start Quiz</button>
+        <button onclick="createQuiz()" id="create-btn">Create Quiz</button>
     </div>
 
     <div class="admin-section">
@@ -195,7 +201,12 @@
             }
 
             const quizUrl = `/quiz/${spreadsheetId}/${tabName}`;
-            window.location.href = quizUrl;
+            addQuizLink(spreadsheetId, tabName, quizUrl);
+            
+            // Clear the form
+            spreadsheetInput.value = '';
+            tabSelect.value = '';
+            resetTabSelect();
         }
 
         function addQuizLink(spreadsheetId, tabName, quizUrl) {
@@ -203,14 +214,19 @@
             const quizLinkDiv = document.createElement('div');
             quizLinkDiv.className = 'quiz-link';
             
+            const fullUrl = window.location.origin + quizUrl;
+            
             quizLinkDiv.innerHTML = `
                 <div class="quiz-info">
                     <div class="sheet-name">${tabName}</div>
-                    <a href="${quizUrl}" target="_blank" class="quiz-url">${quizUrl}</a>
+                    <div class="quiz-url">${fullUrl}</div>
                 </div>
                 <div class="button-group">
-                    <button class="copy-btn" onclick="navigator.clipboard.writeText('${quizUrl}')">
+                    <button class="copy-btn" onclick="navigator.clipboard.writeText('${fullUrl}')">
                         Copy Link
+                    </button>
+                    <button onclick="window.open('${quizUrl}', '_blank')" class="start-btn">
+                        Start Quiz
                     </button>
                     <button class="deactivate-btn" onclick="this.closest('.quiz-link').remove()">
                         Remove
@@ -219,7 +235,20 @@
             `;
             
             quizLinksDiv.appendChild(quizLinkDiv);
+
+            // Save to localStorage
+            const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+            savedQuizzes.push({ spreadsheetId, tabName, quizUrl });
+            localStorage.setItem('quizzes', JSON.stringify(savedQuizzes));
         }
+
+        // Load saved quizzes on page load
+        window.onload = function() {
+            const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+            savedQuizzes.forEach(quiz => {
+                addQuizLink(quiz.spreadsheetId, quiz.tabName, quiz.quizUrl);
+            });
+        };
     </script>
 </body>
 </html>
