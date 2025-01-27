@@ -231,7 +231,7 @@
                 </div>
                 <div class="feedback-section">
                     <div id="feedback-box" class="feedback-box">
-                        <div id="feedback" class="feedback"></div>
+                        <div id="feedback-message" class="feedback"></div>
                         <button id="continue-btn" class="continue-btn" onclick="loadNextQuestion()">Continue</button>
                     </div>
                     <div id="wrong-answers-section">
@@ -276,48 +276,49 @@
             })
             .then(response => response.json())
             .then(data => {
-                const feedback = document.getElementById('feedback');
+                // Get feedback box and message elements
                 const feedbackBox = document.getElementById('feedback-box');
+                const feedbackMessage = document.getElementById('feedback-message');
+                
+                // Clear any previous classes
+                feedbackBox.classList.remove('correct', 'incorrect');
                 
                 if (data.correct) {
-                    currentScore++;
-                    feedback.className = 'feedback correct';
-                    feedbackBox.className = 'feedback-box correct';
-                    feedback.textContent = 'Correct!';
-                    // Find and highlight the correct answer
-                    buttons.forEach(btn => {
-                        if (btn.textContent === answer) {
-                            btn.classList.add('correct');
-                        }
-                    });
+                    feedbackBox.classList.add('correct');
+                    feedbackMessage.innerHTML = 'Correct!';
                 } else {
-                    feedback.className = 'feedback incorrect';
-                    feedbackBox.className = 'feedback-box incorrect';
-                    feedback.innerHTML = `Incorrect.<br><span class="correct-answer-text">The correct answer was: ${escapeHtml(data.correct_answer)}</span>`;
-                    // Store wrong answer for review
-                    wrongAnswers = data.wrong_answers;
-                    // Highlight correct and incorrect answers
-                    buttons.forEach(btn => {
-                        if (btn.textContent === answer) {
-                            btn.classList.add('incorrect');
-                        } else if (btn.textContent === data.correct_answer) {
-                            btn.classList.add('correct');
-                        }
-                    });
+                    feedbackBox.classList.add('incorrect');
+                    feedbackMessage.innerHTML = `
+                        Incorrect.<br>
+                        <span class="correct-answer-text">The correct answer was: ${escapeHtml(data.correct_answer)}</span>
+                    `;
                 }
-                
-                // Update current score
-                document.querySelector('#current-score span').textContent = currentScore;
                 
                 // Show feedback box
                 feedbackBox.style.display = 'block';
                 
+                // Update wrong answers list
+                wrongAnswers = data.wrong_answers;
+                updateWrongAnswersSection();
+                
+                // Disable all answer buttons
+                const buttons = document.querySelectorAll('.answers button');
+                buttons.forEach(button => {
+                    button.disabled = true;
+                    if (button.textContent.trim() === answer.trim()) {
+                        button.classList.add(data.correct ? 'correct' : 'incorrect');
+                    }
+                    if (!data.correct && button.textContent.trim() === data.correct_answer.trim()) {
+                        button.classList.add('correct');
+                    }
+                });
+                
+                // Update current score
+                document.querySelector('#current-score span').textContent = currentScore + (data.correct ? 1 : 0);
+                
                 // Update progress bar
                 const progress = (document.querySelector('.question-number').textContent.split(' ')[1] / totalQuestions) * 100;
                 document.querySelector('.progress-bar').style.width = `${progress}%`;
-                
-                // Update wrong answers section
-                updateWrongAnswersSection();
             })
             .catch(error => {
                 console.error('Error:', error);

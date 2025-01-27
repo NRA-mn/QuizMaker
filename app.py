@@ -154,10 +154,17 @@ def quiz(spreadsheet_id, tab_name):
                 questions = []
                 for row in raw_data[2:]:  # Skip first two rows
                     if len(row) >= 6:  # Make sure we have enough columns
+                        # Store original answers before shuffling
+                        original_answers = [ans.strip() for ans in row[2:6] if ans.strip()]
+                        correct_answer = original_answers[0]  # First answer is correct
+                        
+                        # Shuffle answers
+                        shuffled_answers = shuffle_multiple_times(original_answers)
+                        
                         question = {
                             'question': row[1].strip() if len(row) > 1 else '',
-                            'answers': [ans.strip() for ans in row[2:6] if ans.strip()],  # Get answers from columns C-F
-                            'correct_answer': row[2].strip() if len(row) > 2 else ''  # First answer is correct answer
+                            'answers': shuffled_answers,
+                            'correct_answer': correct_answer
                         }
                         questions.append(question)
                 print(f"Processed {len(questions)} questions")
@@ -165,11 +172,6 @@ def quiz(spreadsheet_id, tab_name):
                 # Shuffle questions
                 questions = shuffle_multiple_times(questions)
                 print("Shuffled questions")
-                
-                # Shuffle answers for each question
-                for q in questions:
-                    q['answers'] = shuffle_multiple_times(q['answers'])
-                print("Shuffled answers")
                 
             else:
                 print("Not enough rows in sheet")
@@ -194,6 +196,8 @@ Traceback:
         # Store in session
         try:
             print("Storing questions in session...")
+            # Shuffle questions again before storing
+            questions = shuffle_multiple_times(questions)
             session['questions'] = questions
             session['current_question'] = 0
             session['score'] = 0
@@ -260,7 +264,7 @@ def get_question():
 def check_answer():
     try:
         data = request.get_json()
-        answer = data.get('answer')
+        answer = data.get('answer', '')
         
         questions = session.get('questions', [])
         current = session.get('current_question', 0)
@@ -270,7 +274,7 @@ def check_answer():
             return jsonify({'error': 'No question to check'}), 400
             
         current_q = questions[current]
-        is_correct = answer == current_q['correct_answer']
+        is_correct = answer.strip() == current_q['correct_answer'].strip()
         
         if is_correct:
             session['score'] = session.get('score', 0) + 1
@@ -293,7 +297,7 @@ def check_answer():
         
     except Exception as e:
         print(f"Error in check_answer: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/admin')
 def admin():
@@ -460,6 +464,7 @@ def debug_sheet():
 
 def shuffle_multiple_times(items, times=5):
     """Shuffle a list multiple times"""
+    items = items.copy()  # Create a copy to avoid modifying original
     for _ in range(times):
         random.shuffle(items)
     return items
