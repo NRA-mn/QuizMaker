@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import json
 import tempfile
 import pathlib
+import time
 
 app = Flask(__name__)
 
@@ -61,14 +62,14 @@ def get_sheet_data(spreadsheet_id, tab_name):
         sheet = service.spreadsheets()
         
         # Get all data from the specified tab
-        range_name = f'{tab_name}!A1:F'
+        range_name = f'{tab_name}!A:F'  # Changed to get all rows
         print(f"Fetching range: {range_name}")
         
         try:
             result = sheet.values().get(spreadsheetId=spreadsheet_id,
                                       range=range_name).execute()
-            print("Successfully fetched data from sheet")
             values = result.get('values', [])
+            print(f"Successfully fetched {len(values)} rows from sheet")
             return values
         except Exception as e:
             print(f"Error fetching sheet data: {e}")
@@ -141,12 +142,14 @@ def quiz(spreadsheet_id, tab_name):
         # Clear any existing session data
         print("Clearing session...")
         session.clear()
-        print(f"Session after clear: {dict(session)}")
         
         # Get questions
         print("Getting questions from spreadsheet...")
         try:
             raw_data = get_sheet_data(spreadsheet_id, tab_name)
+            if not raw_data:
+                return render_template('quiz.html', error="Could not load questions from spreadsheet.")
+                
             print(f"Successfully loaded {len(raw_data)} rows")
             
             # Skip header rows and format questions
@@ -156,20 +159,23 @@ def quiz(spreadsheet_id, tab_name):
                     if len(row) >= 6:  # Make sure we have enough columns
                         # Store original answers before shuffling
                         original_answers = [ans.strip() for ans in row[2:6] if ans.strip()]
-                        correct_answer = original_answers[0]  # First answer is correct
-                        
-                        # Shuffle answers
-                        shuffled_answers = shuffle_multiple_times(original_answers)
-                        
-                        question = {
-                            'question': row[1].strip() if len(row) > 1 else '',
-                            'answers': shuffled_answers,
-                            'correct_answer': correct_answer
-                        }
-                        questions.append(question)
-                print(f"Processed {len(questions)} questions")
+                        if len(original_answers) >= 4:  # Only add if we have all 4 answers
+                            correct_answer = original_answers[0]  # First answer is correct
+                            
+                            # Shuffle answers with new random seed
+                            random.seed(time.time())
+                            shuffled_answers = shuffle_multiple_times(original_answers)
+                            
+                            question = {
+                                'question': row[1].strip() if len(row) > 1 else '',
+                                'answers': shuffled_answers,
+                                'correct_answer': correct_answer
+                            }
+                            questions.append(question)
+                print(f"Processed {len(questions)} valid questions")
             
-                # Shuffle questions
+                # Shuffle questions with new random seed
+                random.seed(time.time())
                 questions = shuffle_multiple_times(questions)
                 print("Shuffled questions")
                 
@@ -196,14 +202,15 @@ Traceback:
         # Store in session
         try:
             print("Storing questions in session...")
-            # Shuffle questions again before storing
+            # Shuffle questions one final time before storing
+            random.seed(time.time())
             questions = shuffle_multiple_times(questions)
             session['questions'] = questions
             session['current_question'] = 0
             session['score'] = 0
             session['total_questions'] = len(questions)
             session['wrong_answers'] = []
-            print(f"Session after storing: {dict(session)}")
+            print(f"Stored {len(questions)} questions in session")
             
             # Get first question ready
             current_q = questions[0]
@@ -213,7 +220,6 @@ Traceback:
                 'current': 1,
                 'total': len(questions)
             }
-            print(f"First question: {first_question}")
             
             return render_template('quiz.html', question=first_question)
             
@@ -463,8 +469,12 @@ def debug_sheet():
         return jsonify({"error": f"Error: {str(e)}"})
 
 def shuffle_multiple_times(items, times=5):
-    """Shuffle a list multiple times"""
+    """Shuffle a list multiple times with random seed"""
+    if not items:
+        return items
     items = items.copy()  # Create a copy to avoid modifying original
+    # Set random seed based on current time for different shuffling each time
+    random.seed(time.time())
     for _ in range(times):
         random.shuffle(items)
     return items
