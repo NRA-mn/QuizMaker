@@ -1,9 +1,7 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
 from google.oauth2 import service_account
+from googleapiclient.discovery import build
 import random
 import os
 from dotenv import load_dotenv
@@ -20,29 +18,43 @@ app.config['SESSION_FILE_DIR'] = os.path.join(tempfile.gettempdir(), 'flask_sess
 app.config['SESSION_PERMANENT'] = False
 Session(app)
 
-load_dotenv()
+# Enable file-based caching
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year in seconds
 
-# OAuth 2.0 configuration
-CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
-CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+# Add CORS headers for better performance with Vercel's CDN
+@app.after_request
+def add_header(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    if 'Cache-Control' not in response.headers:
+        response.headers['Cache-Control'] = 'public, max-age=300'  # Cache for 5 minutes by default
+    return response
+
+load_dotenv()
 
 def get_sheet_data(spreadsheet_id, tab_name):
     print(f"\n=== LOADING SHEET DATA ===")
     print(f"Loading sheet data for spreadsheet {spreadsheet_id}, tab {tab_name}")
-    
-    if 'credentials' not in session:
-        return redirect(url_for('login'))
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    creds = None
     
     try:
-        creds = Credentials(
-            token=session['credentials']['token'],
-            refresh_token=session['credentials']['refresh_token'],
-            token_uri=session['credentials']['token_uri'],
-            client_id=session['credentials']['client_id'],
-            client_secret=session['credentials']['client_secret'],
-            scopes=session['credentials']['scopes']
-        )
+        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+        if google_creds:
+            print("Found GOOGLE_CREDENTIALS in environment, loading...")
+            try:
+                creds_dict = json.loads(google_creds)
+                print("Successfully parsed credentials JSON")
+                creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+                print("Successfully created credentials object")
+            except json.JSONDecodeError as e:
+                print(f"Error parsing credentials JSON: {e}")
+                return None
+            except Exception as e:
+                print(f"Error creating credentials object: {e}")
+                return None
+        else:
+            print("ERROR: No credentials found!")
+            return None
 
         print("Building sheets service...")
         service = build('sheets', 'v4', credentials=creds)
@@ -52,72 +64,26 @@ def get_sheet_data(spreadsheet_id, tab_name):
         range_name = f'{tab_name}!A1:F'
         print(f"Fetching range: {range_name}")
         
-        result = sheet.values().get(spreadsheetId=spreadsheet_id,
-                                  range=range_name).execute()
-        values = result.get('values', [])
-        
-        if not values:
-            print("No data found in sheet")
+        try:
+            result = sheet.values().get(spreadsheetId=spreadsheet_id,
+                                      range=range_name).execute()
+            print("Successfully fetched data from sheet")
+            values = result.get('values', [])
+            return values
+        except Exception as e:
+            print(f"Error fetching sheet data: {e}")
             return None
             
-        print(f"Found {len(values)} rows of data")
-        return values
-        
     except Exception as e:
-        print(f"Error accessing sheet: {str(e)}")
+        print(f"Unexpected error: {e}")
         return None
 
 @app.route('/login')
 def login():
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [request.base_url + "/callback"]
-            }
-        },
-        scopes=SCOPES
-    )
-    
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-    
-    session['state'] = state
-    return redirect(authorization_url)
+    return redirect(url_for('index'))
 
 @app.route('/login/callback')
 def callback():
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for('callback', _external=True)]
-            }
-        },
-        scopes=SCOPES,
-        state=session['state']
-    )
-    
-    flow.fetch_token(authorization_response=request.url)
-    credentials = flow.credentials
-    
-    session['credentials'] = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
-    }
-    
     return redirect(url_for('index'))
 
 @app.route('/')
@@ -130,18 +96,16 @@ def get_tabs(spreadsheet_id):
         print("\n=== DEBUG: GET_TABS ===")
         print(f"Spreadsheet ID: {spreadsheet_id}")
         
-        if 'credentials' not in session:
-            return redirect(url_for('login'))
-        
         try:
-            creds = Credentials(
-                token=session['credentials']['token'],
-                refresh_token=session['credentials']['refresh_token'],
-                token_uri=session['credentials']['token_uri'],
-                client_id=session['credentials']['client_id'],
-                client_secret=session['credentials']['client_secret'],
-                scopes=session['credentials']['scopes']
-            )
+            creds = None
+            google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+            if google_creds:
+                print("Found GOOGLE_CREDENTIALS in environment, loading...")
+                creds_dict = json.loads(google_creds)
+                creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'])
+            else:
+                print("ERROR: No credentials found!")
+                raise ValueError("No credentials found")
 
             print("Building sheets service...")
             service = build('sheets', 'v4', credentials=creds)
@@ -324,18 +288,16 @@ def admin():
 @app.route('/test_sheet/<spreadsheet_id>/<tab_name>')
 def test_sheet(spreadsheet_id, tab_name):
     try:
-        if 'credentials' not in session:
-            return redirect(url_for('login'))
-        
         try:
-            creds = Credentials(
-                token=session['credentials']['token'],
-                refresh_token=session['credentials']['refresh_token'],
-                token_uri=session['credentials']['token_uri'],
-                client_id=session['credentials']['client_id'],
-                client_secret=session['credentials']['client_secret'],
-                scopes=session['credentials']['scopes']
-            )
+            creds = None
+            google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+            if google_creds:
+                print("Found GOOGLE_CREDENTIALS in environment, loading...")
+                creds_dict = json.loads(google_creds)
+                creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'])
+            else:
+                print("ERROR: No credentials found!")
+                raise ValueError("No credentials found")
 
             print("Building sheets service...")
             service = build('sheets', 'v4', credentials=creds)
@@ -368,6 +330,26 @@ def test_sheet(spreadsheet_id, tab_name):
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
 
+@app.route('/test-sheets')
+def test_sheets():
+    spreadsheet_id = "1O_3JeLPpPWMvakQEP8JVP0UB5FkwTW2k-IPirx2nkcM"  # Your spreadsheet ID
+    tab_name = "Sheet1"  # Your tab name
+    
+    # Test credentials
+    google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+    if not google_creds:
+        return jsonify({"error": "No credentials found in environment"})
+    
+    try:
+        creds_dict = json.loads(google_creds)
+        return jsonify({
+            "status": "Credentials parsed successfully",
+            "project_id": creds_dict.get("project_id"),
+            "client_email": creds_dict.get("client_email")
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error parsing credentials: {str(e)}"})
+
 def shuffle_multiple_times(items, times=5):
     """Shuffle a list multiple times"""
     for _ in range(times):
@@ -375,5 +357,5 @@ def shuffle_multiple_times(items, times=5):
     return items
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5002))
-    app.run(host='0.0.0.0', port=port)
+    port = 5003
+    app.run(host='0.0.0.0', port=port, debug=True)
