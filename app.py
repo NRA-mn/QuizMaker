@@ -355,18 +355,94 @@ def test_sheet_read():
     spreadsheet_id = "1O_3JeLPpPWMvakQEP8JVP0UB5FkwTW2k-IPirx2nkcM"
     tab_name = "Sheet1"
     
+    print("\n=== TESTING SHEET READ ===")
+    
+    # 1. Test Google Sheets API
     try:
-        values = get_sheet_data(spreadsheet_id, tab_name)
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
+        print("✓ Successfully imported Google Sheets libraries")
+    except Exception as e:
+        print(f"✗ Error importing libraries: {e}")
+        return jsonify({"error": f"Import error: {str(e)}"})
+    
+    # 2. Test credentials
+    try:
+        google_creds = os.environ.get('GOOGLE_CREDENTIALS')
+        if not google_creds:
+            print("✗ No credentials found in environment")
+            return jsonify({"error": "No credentials found"})
+        
+        creds_dict = json.loads(google_creds)
+        print(f"✓ Found credentials for project: {creds_dict.get('project_id')}")
+        print(f"✓ Service account email: {creds_dict.get('client_email')}")
+    except Exception as e:
+        print(f"✗ Error parsing credentials: {e}")
+        return jsonify({"error": f"Credentials error: {str(e)}"})
+    
+    # 3. Test service account auth
+    try:
+        SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+        creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        print("✓ Successfully created credentials object")
+    except Exception as e:
+        print(f"✗ Error creating service account auth: {e}")
+        return jsonify({"error": f"Auth error: {str(e)}"})
+    
+    # 4. Test building service
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+        sheet = service.spreadsheets()
+        print("✓ Successfully built sheets service")
+    except Exception as e:
+        print(f"✗ Error building service: {e}")
+        return jsonify({"error": f"Service error: {str(e)}"})
+    
+    # 5. Test fetching data
+    try:
+        range_name = f'{tab_name}!A1:F'
+        print(f"Attempting to fetch range: {range_name}")
+        result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
         if values:
+            print(f"✓ Successfully fetched {len(values)} rows")
             return jsonify({
                 "status": "success",
                 "row_count": len(values),
                 "first_row": values[0] if values else None
             })
         else:
-            return jsonify({"error": "No data returned from get_sheet_data"})
+            print("✗ No data found in sheet")
+            return jsonify({"error": "No data found in sheet"})
     except Exception as e:
-        return jsonify({"error": f"Error reading sheet: {str(e)}"})
+        print(f"✗ Error fetching data: {e}")
+        return jsonify({"error": f"Data fetch error: {str(e)}"})
+
+@app.route('/debug-sheet')
+def debug_sheet():
+    spreadsheet_id = "1O_3JeLPpPWMvakQEP8JVP0UB5FkwTW2k-IPirx2nkcM"
+    tab_name = "Sheet1"
+    
+    try:
+        # Get raw data
+        values = get_sheet_data(spreadsheet_id, tab_name)
+        
+        if values:
+            # Return detailed info about the data structure
+            return jsonify({
+                "total_rows": len(values),
+                "row_lengths": [len(row) for row in values],
+                "first_two_rows": values[:2] if len(values) >= 2 else values,
+                "sample_row": {
+                    "raw": values[2] if len(values) > 2 else None,
+                    "column_count": len(values[2]) if len(values) > 2 else 0
+                } if len(values) > 2 else None
+            })
+        else:
+            return jsonify({"error": "No data found in sheet"})
+            
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"})
 
 def shuffle_multiple_times(items, times=5):
     """Shuffle a list multiple times"""
