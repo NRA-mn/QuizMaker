@@ -350,6 +350,24 @@ def test_sheets():
     except Exception as e:
         return jsonify({"error": f"Error parsing credentials: {str(e)}"})
 
+@app.route('/test-sheet-read')
+def test_sheet_read():
+    spreadsheet_id = "1O_3JeLPpPWMvakQEP8JVP0UB5FkwTW2k-IPirx2nkcM"
+    tab_name = "Sheet1"
+    
+    try:
+        values = get_sheet_data(spreadsheet_id, tab_name)
+        if values:
+            return jsonify({
+                "status": "success",
+                "row_count": len(values),
+                "first_row": values[0] if values else None
+            })
+        else:
+            return jsonify({"error": "No data returned from get_sheet_data"})
+    except Exception as e:
+        return jsonify({"error": f"Error reading sheet: {str(e)}"})
+
 def shuffle_multiple_times(items, times=5):
     """Shuffle a list multiple times"""
     for _ in range(times):
