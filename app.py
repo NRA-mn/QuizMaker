@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_session import Session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -146,22 +146,34 @@ def quiz(spreadsheet_id, tab_name):
         # Get questions
         print("Getting questions from spreadsheet...")
         try:
-            questions = get_sheet_data(spreadsheet_id, tab_name)
-            print(f"Successfully loaded {len(questions)} questions")
+            raw_data = get_sheet_data(spreadsheet_id, tab_name)
+            print(f"Successfully loaded {len(raw_data)} rows")
             
-            # Skip header rows
-            if len(questions) > 2:
-                questions = questions[2:]  # Skip first two rows
-                print(f"Skipped 2 header rows, processing {len(questions)} content rows")
+            # Skip header rows and format questions
+            if len(raw_data) > 2:
+                questions = []
+                for row in raw_data[2:]:  # Skip first two rows
+                    if len(row) >= 6:  # Make sure we have enough columns
+                        question = {
+                            'question': row[1].strip() if len(row) > 1 else '',
+                            'answers': [ans.strip() for ans in row[2:6] if ans.strip()],  # Get answers from columns C-F
+                            'correct_answer': row[2].strip() if len(row) > 2 else ''  # First answer is correct answer
+                        }
+                        questions.append(question)
+                print(f"Processed {len(questions)} questions")
             
-            # Shuffle questions multiple times
-            questions = shuffle_multiple_times(questions)
-            print("Shuffled questions")
-            
-            # Shuffle answers for each question multiple times
-            for q in questions:
-                q['answers'] = shuffle_multiple_times(q['answers'])
-            print("Shuffled answers")
+                # Shuffle questions
+                questions = shuffle_multiple_times(questions)
+                print("Shuffled questions")
+                
+                # Shuffle answers for each question
+                for q in questions:
+                    q['answers'] = shuffle_multiple_times(q['answers'])
+                print("Shuffled answers")
+                
+            else:
+                print("Not enough rows in sheet")
+                return render_template('quiz.html', error="Not enough questions in the spreadsheet.")
             
         except Exception as e:
             print(f"Error getting sheet data: {str(e)}")
@@ -177,7 +189,7 @@ Traceback:
             return render_template('quiz.html', error=f"Error loading questions: {str(e)}", debug_info=debug_info)
         
         if not questions:
-            return render_template('quiz.html', error="No questions found in the spreadsheet.")
+            return render_template('quiz.html', error="No valid questions found in the spreadsheet.")
         
         # Store in session
         try:
@@ -186,14 +198,14 @@ Traceback:
             session['current_question'] = 0
             session['score'] = 0
             session['total_questions'] = len(questions)
-            session['wrong_answers'] = []  # Initialize wrong answers list
+            session['wrong_answers'] = []
             print(f"Session after storing: {dict(session)}")
             
             # Get first question ready
             current_q = questions[0]
             first_question = {
-                'question': current_q[1].strip(),
-                'answers': current_q[2:6],
+                'question': current_q['question'],
+                'answers': current_q['answers'],
                 'current': 1,
                 'total': len(questions)
             }
@@ -211,28 +223,30 @@ Traceback:
         print(f"Traceback: {traceback.format_exc()}")
         return render_template('quiz.html', error=str(e))
 
-@app.route('/get_question')
+@app.route('/get_question', methods=['POST'])
 def get_question():
     try:
         questions = session.get('questions', [])
         current = session.get('current_question', 0)
         wrong_answers = session.get('wrong_answers', [])
         
-        if not questions or current >= len(questions):
+        if not questions:
+            return jsonify({'error': 'No questions found'}), 400
+            
+        if current >= len(questions):
             score = session.get('score', 0)
-            total = session.get('total_questions', 1)
-            percentage = int((score / total) * 100)
             return jsonify({
-                'complete': True, 
-                'score': percentage,
+                'complete': True,
+                'score': score,
+                'total': len(questions),
                 'wrong_answers': wrong_answers
             })
             
         current_q = questions[current]
         return jsonify({
             'complete': False,
-            'question': current_q[1].strip(),
-            'answers': current_q[2:6],
+            'question': current_q['question'],
+            'answers': current_q['answers'],
             'current': current + 1,
             'total': len(questions),
             'wrong_answers': wrong_answers
@@ -240,7 +254,7 @@ def get_question():
         
     except Exception as e:
         print(f"Error in get_question: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/check_answer', methods=['POST'])
 def check_answer():
@@ -256,16 +270,16 @@ def check_answer():
             return jsonify({'error': 'No question to check'}), 400
             
         current_q = questions[current]
-        is_correct = answer == current_q[2].strip()
+        is_correct = answer == current_q['correct_answer']
         
         if is_correct:
             session['score'] = session.get('score', 0) + 1
         else:
             # Store wrong answer
             wrong_answers.append({
-                'question': current_q[1].strip(),
+                'question': current_q['question'],
                 'yourAnswer': answer,
-                'correctAnswer': current_q[2].strip()
+                'correctAnswer': current_q['correct_answer']
             })
             session['wrong_answers'] = wrong_answers
             
@@ -273,7 +287,7 @@ def check_answer():
         
         return jsonify({
             'correct': is_correct,
-            'correct_answer': current_q[2].strip(),
+            'correct_answer': current_q['correct_answer'],
             'wrong_answers': wrong_answers
         })
         
@@ -451,5 +465,5 @@ def shuffle_multiple_times(items, times=5):
     return items
 
 if __name__ == '__main__':
-    port = 5003
+    port = 5004
     app.run(host='0.0.0.0', port=port, debug=True)
