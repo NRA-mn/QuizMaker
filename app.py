@@ -62,7 +62,7 @@ def get_sheet_data(spreadsheet_id, tab_name):
         sheet = service.spreadsheets()
         
         # Get all data from the specified tab
-        range_name = f'{tab_name}!A:F'  # Changed to get all rows
+        range_name = f'{tab_name}!A:F'  # Get all rows
         print(f"Fetching range: {range_name}")
         
         try:
@@ -140,7 +140,6 @@ def quiz(spreadsheet_id, tab_name):
         print(f"Starting quiz for spreadsheet {spreadsheet_id}, tab {tab_name}")
         
         # Clear any existing session data
-        print("Clearing session...")
         session.clear()
         
         # Get questions
@@ -155,26 +154,52 @@ def quiz(spreadsheet_id, tab_name):
             # Skip header rows and format questions
             if len(raw_data) > 2:
                 questions = []
+                skipped = 0
                 for row in raw_data[2:]:  # Skip first two rows
-                    if len(row) >= 6:  # Make sure we have enough columns
-                        # Store original answers before shuffling
-                        original_answers = [ans.strip() for ans in row[2:6] if ans.strip()]
-                        if len(original_answers) >= 4:  # Only add if we have all 4 answers
-                            correct_answer = original_answers[0]  # First answer is correct
+                    try:
+                        # Must have at least question and one answer
+                        if len(row) >= 3 and row[1].strip() and row[2].strip():
+                            # Get question and correct answer
+                            question_text = row[1].strip()
+                            correct_answer = row[2].strip()  # C is always correct answer
                             
-                            # Shuffle answers with new random seed
-                            random.seed(time.time())
-                            shuffled_answers = shuffle_multiple_times(original_answers)
+                            # Get available wrong answers (D, E, F)
+                            wrong_answers = []
+                            for i in range(3, min(len(row), 6)):  # Check columns D, E, F
+                                if row[i].strip():
+                                    wrong_answers.append(row[i].strip())
                             
-                            question = {
-                                'question': row[1].strip() if len(row) > 1 else '',
-                                'answers': shuffled_answers,
-                                'correct_answer': correct_answer
-                            }
-                            questions.append(question)
-                print(f"Processed {len(questions)} valid questions")
+                            if wrong_answers:  # Must have at least one wrong answer
+                                # Combine correct and wrong answers
+                                all_answers = [correct_answer] + wrong_answers
+                                
+                                # Shuffle answers
+                                random.seed(time.time())
+                                shuffled_answers = shuffle_multiple_times(all_answers)
+                                
+                                question = {
+                                    'question': question_text,
+                                    'answers': shuffled_answers,
+                                    'correct_answer': correct_answer
+                                }
+                                questions.append(question)
+                            else:
+                                skipped += 1
+                                print(f"Skipping row {len(questions) + skipped}: No wrong answers")
+                        else:
+                            skipped += 1
+                            print(f"Skipping row {len(questions) + skipped}: Missing question or correct answer")
+                    except Exception as row_error:
+                        skipped += 1
+                        print(f"Error processing row: {row_error}")
+                        continue
+                        
+                print(f"Processed {len(questions)} valid questions (skipped {skipped})")
             
-                # Shuffle questions with new random seed
+                if not questions:
+                    return render_template('quiz.html', error="No valid questions found in the spreadsheet.")
+                
+                # Shuffle questions
                 random.seed(time.time())
                 questions = shuffle_multiple_times(questions)
                 print("Shuffled questions")
@@ -195,9 +220,6 @@ Traceback:
 {traceback.format_exc()}
 """
             return render_template('quiz.html', error=f"Error loading questions: {str(e)}", debug_info=debug_info)
-        
-        if not questions:
-            return render_template('quiz.html', error="No valid questions found in the spreadsheet.")
         
         # Store in session
         try:
