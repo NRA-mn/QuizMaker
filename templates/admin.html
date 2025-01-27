@@ -213,6 +213,8 @@
             const quizLinksDiv = document.getElementById('quiz-links');
             const quizLinkDiv = document.createElement('div');
             quizLinkDiv.className = 'quiz-link';
+            quizLinkDiv.dataset.spreadsheetId = spreadsheetId;
+            quizLinkDiv.dataset.tabName = tabName;
             
             const fullUrl = window.location.origin + quizUrl;
             
@@ -228,7 +230,7 @@
                     <button onclick="window.open('${quizUrl}', '_blank')" class="start-btn">
                         Start Quiz
                     </button>
-                    <button class="deactivate-btn" onclick="this.closest('.quiz-link').remove()">
+                    <button class="deactivate-btn" onclick="removeQuiz(this)">
                         Remove
                     </button>
                 </div>
@@ -238,14 +240,63 @@
 
             // Save to localStorage
             const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
-            savedQuizzes.push({ spreadsheetId, tabName, quizUrl });
-            localStorage.setItem('quizzes', JSON.stringify(savedQuizzes));
+            // Check for duplicates before adding
+            const isDuplicate = savedQuizzes.some(q => 
+                q.spreadsheetId === spreadsheetId && q.tabName === tabName
+            );
+            if (!isDuplicate) {
+                savedQuizzes.push({ spreadsheetId, tabName, quizUrl });
+                localStorage.setItem('quizzes', JSON.stringify(savedQuizzes));
+            }
         }
+
+        function removeQuiz(button) {
+            const quizDiv = button.closest('.quiz-link');
+            const spreadsheetId = quizDiv.dataset.spreadsheetId;
+            const tabName = quizDiv.dataset.tabName;
+            
+            // Remove from localStorage
+            const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+            const updatedQuizzes = savedQuizzes.filter(q => 
+                !(q.spreadsheetId === spreadsheetId && q.tabName === tabName)
+            );
+            localStorage.setItem('quizzes', JSON.stringify(updatedQuizzes));
+            
+            // Remove from DOM
+            quizDiv.remove();
+        }
+
+        // Clear all quizzes
+        function clearAllQuizzes() {
+            const quizLinksDiv = document.getElementById('quiz-links');
+            quizLinksDiv.innerHTML = '';
+            localStorage.removeItem('quizzes');
+        }
+
+        // Add clear all button
+        document.addEventListener('DOMContentLoaded', function() {
+            const adminSection = document.querySelector('.admin-section:nth-child(2)');
+            const clearButton = document.createElement('button');
+            clearButton.className = 'deactivate-btn';
+            clearButton.style.marginTop = '20px';
+            clearButton.textContent = 'Clear All Quizzes';
+            clearButton.onclick = clearAllQuizzes;
+            adminSection.appendChild(clearButton);
+        });
 
         // Load saved quizzes on page load
         window.onload = function() {
             const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
-            savedQuizzes.forEach(quiz => {
+            // Remove duplicates before loading
+            const uniqueQuizzes = savedQuizzes.filter((quiz, index, self) =>
+                index === self.findIndex(q => 
+                    q.spreadsheetId === quiz.spreadsheetId && q.tabName === quiz.tabName
+                )
+            );
+            // Update localStorage with unique quizzes
+            localStorage.setItem('quizzes', JSON.stringify(uniqueQuizzes));
+            // Add unique quizzes to page
+            uniqueQuizzes.forEach(quiz => {
                 addQuizLink(quiz.spreadsheetId, quiz.tabName, quiz.quizUrl);
             });
         };
