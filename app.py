@@ -9,14 +9,16 @@ import json
 import tempfile
 import pathlib
 import time
+from datetime import timedelta
 
 app = Flask(__name__)
 
 # Session configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = os.path.join(tempfile.gettempdir(), 'flask_session')
+app.config['SESSION_FILE_DIR'] = tempfile.gettempdir()
 app.config['SESSION_PERMANENT'] = False
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=5)
 Session(app)
 
 # Enable file-based caching
@@ -262,10 +264,14 @@ def get_question():
         current = session.get('current_question', 0)
         wrong_answers = session.get('wrong_answers', [])
         
+        print(f"Getting question {current + 1} of {len(questions)}")
+        
         if not questions:
+            print("No questions found in session")
             return jsonify({'error': 'No questions found'}), 400
             
         if current >= len(questions):
+            print("Quiz complete")
             score = session.get('score', 0)
             return jsonify({
                 'complete': True,
@@ -275,14 +281,16 @@ def get_question():
             })
             
         current_q = questions[current]
-        return jsonify({
+        response_data = {
             'complete': False,
             'question': current_q['question'],
             'answers': current_q['answers'],
             'current': current + 1,
             'total': len(questions),
             'wrong_answers': wrong_answers
-        })
+        }
+        print(f"Returning question data: {response_data}")
+        return jsonify(response_data)
         
     except Exception as e:
         print(f"Error in get_question: {str(e)}")
@@ -292,20 +300,33 @@ def get_question():
 def check_answer():
     try:
         data = request.get_json()
-        answer = data.get('answer', '')
+        if not data:
+            print("No data received in check_answer")
+            return jsonify({'error': 'No answer provided'}), 400
+            
+        answer = data.get('answer', '').strip()
+        if not answer:
+            print("Empty answer received")
+            return jsonify({'error': 'Empty answer'}), 400
         
         questions = session.get('questions', [])
         current = session.get('current_question', 0)
         wrong_answers = session.get('wrong_answers', [])
         
+        print(f"Checking answer for question {current + 1} of {len(questions)}")
+        print(f"Received answer: {answer}")
+        
         if not questions or current >= len(questions):
+            print("No valid question to check")
             return jsonify({'error': 'No question to check'}), 400
             
         current_q = questions[current]
         is_correct = answer.strip() == current_q['correct_answer'].strip()
+        print(f"Answer is {'correct' if is_correct else 'incorrect'}")
         
         if is_correct:
             session['score'] = session.get('score', 0) + 1
+            print(f"New score: {session['score']}")
         else:
             # Store wrong answer
             wrong_answers.append({
@@ -314,8 +335,14 @@ def check_answer():
                 'correctAnswer': current_q['correct_answer']
             })
             session['wrong_answers'] = wrong_answers
+            print("Added to wrong answers list")
             
+        # Move to next question
         session['current_question'] = current + 1
+        print(f"Moving to question {session['current_question'] + 1}")
+        
+        # Make sure session is saved
+        session.modified = True
         
         return jsonify({
             'correct': is_correct,
@@ -325,6 +352,8 @@ def check_answer():
         
     except Exception as e:
         print(f"Error in check_answer: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/admin')

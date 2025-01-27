@@ -332,8 +332,9 @@
         }
         
         function loadNextQuestion() {
-            // Hide feedback box
+            // Hide feedback box and error message
             document.getElementById('feedback-box').style.display = 'none';
+            document.querySelector('.error')?.remove();
             
             fetch('/get_question', {
                 method: 'POST',
@@ -341,57 +342,72 @@
                     'Content-Type': 'application/json',
                 }
             })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.complete) {
-                        showFinalScore(data.score);
-                    } else {
-                        displayQuestion(data);
-                        wrongAnswers = data.wrong_answers;
-                        updateWrongAnswersSection();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showError('Failed to load next question');
-                });
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load next question');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                if (data.complete) {
+                    showFinalScore(data);
+                } else {
+                    displayQuestion(data);
+                    wrongAnswers = data.wrong_answers;
+                    updateWrongAnswersSection();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError(error.message || 'Failed to load next question');
+            });
         }
         
         function displayQuestion(data) {
-            // Hide feedback box
-            document.getElementById('feedback-box').style.display = 'none';
+            // Update question number
+            document.querySelector('.question-number').textContent = 
+                `Question ${data.current} of ${data.total}`;
             
-            // Update question container contents without changing its position
-            const container = document.getElementById('question-container');
-            container.innerHTML = `
-                <div class="question-number">Question ${data.current} of ${data.total}</div>
-                <div id="question-text">${escapeHtml(data.question)}</div>
-                <div class="answers">
-                    ${data.answers.map(answer => `
-                        <button onclick="submitAnswer('${escapeHtml(answer.replace(/'/g, "\\'"))}')">${escapeHtml(answer)}</button>
-                    `).join('')}
-                </div>
-            `;
+            // Update question text
+            document.getElementById('question-text').textContent = data.question;
             
-            // Make sure all buttons are enabled for the new question
-            const buttons = container.querySelectorAll('.answers button');
-            buttons.forEach(btn => {
-                btn.disabled = false;
-                btn.classList.remove('correct', 'incorrect');
+            // Update answers
+            const answersDiv = document.querySelector('.answers');
+            answersDiv.innerHTML = '';
+            data.answers.forEach(answer => {
+                const button = document.createElement('button');
+                button.textContent = answer;
+                button.onclick = () => submitAnswer(answer);
+                answersDiv.appendChild(button);
             });
             
             // Update progress bar
-            const progress = ((data.current - 1) / totalQuestions) * 100;
+            const progress = (data.current / data.total) * 100;
             document.querySelector('.progress-bar').style.width = `${progress}%`;
         }
         
-        function showFinalScore(score) {
-            document.getElementById('question-container').style.display = 'none';
-            document.getElementById('feedback-box').style.display = 'none';
-            document.getElementById('score-container').style.display = 'block';
-            document.getElementById('final-score').textContent = score;
+        function showFinalScore(data) {
+            const container = document.querySelector('.question-section');
+            const percentage = Math.round((data.score / data.total) * 100);
             
-            // Update final progress bar
+            container.innerHTML = `
+                <div id="score-container">
+                    <h2>Quiz Complete!</h2>
+                    <div id="final-score">${percentage}%</div>
+                    <p>You got ${data.score} out of ${data.total} questions correct.</p>
+                    ${data.wrong_answers.length > 0 ? `
+                        <button id="wrong-answers-btn" onclick="toggleWrongAnswers()">
+                            Show Wrong Answers (${data.wrong_answers.length})
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Update progress bar to 100%
             document.querySelector('.progress-bar').style.width = '100%';
             
             // Update wrong answers section
@@ -435,11 +451,13 @@
         
         function showError(message) {
             const container = document.querySelector('.container');
-            container.innerHTML = `
-                <h2 class="error">Error</h2>
-                <p class="error">${message}</p>
-                <button onclick="window.location.reload()">Try Again</button>
-            `;
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // Scroll to error
+            errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         // Initialize wrong answers section
