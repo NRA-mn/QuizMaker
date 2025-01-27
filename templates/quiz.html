@@ -334,7 +334,12 @@
             // Hide feedback box
             document.getElementById('feedback-box').style.display = 'none';
             
-            fetch('/get_question')
+            fetch('/get_question', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
                 .then(response => response.json())
                 .then(data => {
                     if (data.complete) {
