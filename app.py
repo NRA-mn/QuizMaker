@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from flask_session import Session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 import random
 import os
 from dotenv import load_dotenv
@@ -83,6 +85,9 @@ def get_sheet_data(spreadsheet_id, tab_name):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return None
+
+GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID"  # We'll update this with your actual client ID
+ALLOWED_EMAIL = "attalnechoma@gmail.com"
 
 @app.route('/login')
 def login():
@@ -362,24 +367,49 @@ def check_answer():
 def requires_admin(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('is_admin'):
+        if not session.get('is_admin') or session.get('email') != ALLOWED_EMAIL:
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    if request.method == 'POST':
-        password = request.form.get('password')
-        if check_password_hash(app.config['ADMIN_PASSWORD_HASH'], password):
-            session['is_admin'] = True
-            return redirect(url_for('admin'))
-        return render_template('admin_login.html', error="Incorrect password")
-    return render_template('admin_login.html')
+    if session.get('is_admin') and session.get('email') == ALLOWED_EMAIL:
+        return redirect(url_for('admin'))
+    return render_template('admin_login.html', client_id=GOOGLE_CLIENT_ID)
+
+@app.route('/admin/auth/google', methods=['POST'])
+def google_auth():
+    try:
+        token = request.json.get('credential')
+        if not token:
+            return jsonify({'error': 'No token provided'}), 400
+
+        idinfo = id_token.verify_oauth2_token(
+            token, 
+            google_requests.Request(), 
+            GOOGLE_CLIENT_ID
+        )
+
+        email = idinfo['email']
+        if email != ALLOWED_EMAIL:
+            return jsonify({
+                'error': 'Unauthorized email. Only the quiz administrator can access this page.'
+            }), 403
+
+        session['is_admin'] = True
+        session['email'] = email
+        session['name'] = idinfo.get('name', email)
+        
+        return jsonify({'success': True, 'redirect': url_for('admin')})
+        
+    except ValueError as e:
+        print(f"Token verification failed: {str(e)}")
+        return jsonify({'error': 'Invalid token'}), 400
 
 @app.route('/admin/logout')
 def admin_logout():
-    session.pop('is_admin', None)
+    session.clear()
     return redirect(url_for('admin_login'))
 
 @app.route('/admin')
