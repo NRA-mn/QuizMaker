@@ -86,7 +86,7 @@ def get_sheet_data(spreadsheet_id, tab_name):
         print(f"Unexpected error: {e}")
         return None
 
-GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID"  # We'll update this with your actual client ID
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '1041595629180-7v5g3jt0ckf0qpvt2r7iu0h6aqhv4t4j.apps.googleusercontent.com')
 ALLOWED_EMAIL = "attalnechoma@gmail.com"
 
 @app.route('/login')
