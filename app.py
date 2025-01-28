@@ -10,6 +10,8 @@ import tempfile
 import pathlib
 import time
 from datetime import timedelta
+from functools import wraps
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
@@ -19,6 +21,7 @@ app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = tempfile.gettempdir()
 app.config['SESSION_PERMANENT'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=5)
+app.config['ADMIN_PASSWORD_HASH'] = generate_password_hash('quizmaster2024')  # Default password
 Session(app)
 
 # Enable file-based caching
@@ -356,7 +359,31 @@ def check_answer():
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
 
+def requires_admin(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('is_admin'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if check_password_hash(app.config['ADMIN_PASSWORD_HASH'], password):
+            session['is_admin'] = True
+            return redirect(url_for('admin'))
+        return render_template('admin_login.html', error="Incorrect password")
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_login'))
+
 @app.route('/admin')
+@requires_admin
 def admin():
     return render_template('admin.html')
 
