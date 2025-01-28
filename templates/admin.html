@@ -75,6 +75,8 @@
             justify-content: space-between;
             align-items: center;
             cursor: move;
+            position: relative;
+            padding-left: 35px;
         }
         .quiz-info {
             flex-grow: 1;
@@ -175,6 +177,47 @@
             border-radius: 4px;
             margin-right: 10px;
         }
+        .quiz-checkbox {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .multi-select-controls {
+            display: none;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .multi-select-controls.visible {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .select-all-checkbox {
+            margin-right: 5px;
+        }
+        .move-selected-btn {
+            background-color: #38a169;
+            color: white;
+            padding: 5px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .move-selected-btn:hover {
+            background-color: #2f855a;
+        }
+        .folder-select {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
@@ -202,6 +245,18 @@
     
     <div class="admin-section unorganized">
         <h2>Unorganized Quizzes</h2>
+        <div class="multi-select-controls">
+            <label>
+                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll(this)">
+                Select All
+            </label>
+            <select class="folder-select">
+                <option value="">Select Folder...</option>
+            </select>
+            <button class="move-selected-btn" onclick="moveSelectedToFolder()">
+                Move Selected
+            </button>
+        </div>
         <div id="quiz-links"></div>
     </div>
 
@@ -391,11 +446,17 @@
         
         function createQuizLinkHTML(quiz, folderId = null) {
             const fullUrl = window.location.origin + quiz.quizUrl;
+            const checkboxHtml = !folderId ? `
+                <input type="checkbox" class="quiz-checkbox" onchange="updateSelectAllState()">
+            ` : '';
+            
             return `
                 <div class="quiz-link" draggable="true" 
                     ondragstart="handleDragStart(event, '${quiz.spreadsheetId}', '${quiz.tabName}', '${quiz.quizUrl}')"
                     data-spreadsheet-id="${quiz.spreadsheetId}"
-                    data-tab-name="${quiz.tabName}">
+                    data-tab-name="${quiz.tabName}"
+                    data-quiz-url="${quiz.quizUrl}">
+                    ${checkboxHtml}
                     <div class="quiz-info">
                         <div class="sheet-name">${quiz.tabName}</div>
                         <div class="quiz-url">${fullUrl}</div>
@@ -505,11 +566,104 @@
             savedQuizzes.forEach(quiz => {
                 quizLinksDiv.insertAdjacentHTML('beforeend', createQuizLinkHTML(quiz));
             });
+            
+            updateMultiSelectControls();
         }
         
+        function updateFolderSelect() {
+            const select = document.querySelector('.folder-select');
+            select.innerHTML = '<option value="">Select Folder...</option>';
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.id;
+                option.textContent = folder.name;
+                select.appendChild(option);
+            });
+        }
+
+        function toggleSelectAll(checkbox) {
+            const quizCheckboxes = document.querySelectorAll('.quiz-checkbox');
+            quizCheckboxes.forEach(box => box.checked = checkbox.checked);
+        }
+
+        function updateMultiSelectControls() {
+            const controls = document.querySelector('.multi-select-controls');
+            const checkboxes = document.querySelectorAll('.quiz-checkbox');
+            const hasCheckboxes = checkboxes.length > 0;
+            controls.classList.toggle('visible', hasCheckboxes);
+            
+            if (hasCheckboxes) {
+                updateFolderSelect();
+            }
+        }
+
+        function updateSelectAllState() {
+            const allCheckboxes = document.querySelectorAll('.quiz-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.quiz-checkbox:checked');
+            const selectAllCheckbox = document.querySelector('.select-all-checkbox');
+            
+            if (allCheckboxes.length > 0) {
+                selectAllCheckbox.checked = allCheckboxes.length === checkedCheckboxes.length;
+                selectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && 
+                    checkedCheckboxes.length < allCheckboxes.length;
+            }
+        }
+
+        function moveSelectedToFolder() {
+            const selectedFolderId = document.querySelector('.folder-select').value;
+            if (!selectedFolderId) {
+                alert('Please select a folder first');
+                return;
+            }
+
+            const checkedBoxes = document.querySelectorAll('.quiz-checkbox:checked');
+            if (checkedBoxes.length === 0) {
+                alert('Please select at least one quiz');
+                return;
+            }
+
+            const targetFolder = folders.find(f => f.id === selectedFolderId);
+            if (!targetFolder) return;
+
+            checkedBoxes.forEach(box => {
+                const quizDiv = box.closest('.quiz-link');
+                const spreadsheetId = quizDiv.dataset.spreadsheetId;
+                const tabName = quizDiv.dataset.tabName;
+                const quizUrl = quizDiv.dataset.quizUrl;
+
+                // Remove from unorganized
+                const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+                const updatedQuizzes = savedQuizzes.filter(q => 
+                    !(q.spreadsheetId === spreadsheetId && q.tabName === tabName)
+                );
+                localStorage.setItem('quizzes', JSON.stringify(updatedQuizzes));
+
+                // Add to folder
+                const quizData = {
+                    spreadsheetId,
+                    tabName,
+                    quizUrl
+                };
+                
+                // Check if quiz already exists in target folder
+                const isDuplicate = targetFolder.quizzes.some(q => 
+                    q.spreadsheetId === spreadsheetId && q.tabName === tabName
+                );
+                
+                if (!isDuplicate) {
+                    targetFolder.quizzes.push(quizData);
+                }
+            });
+
+            saveFolders();
+            renderFolders();
+            loadSavedQuizzes();
+        }
+
         window.onload = function() {
             renderFolders();
             loadSavedQuizzes();
+            updateMultiSelectControls();
         };
     </script>
 </body>
