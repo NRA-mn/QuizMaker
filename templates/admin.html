@@ -74,6 +74,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: move;
         }
         .quiz-info {
             flex-grow: 1;
@@ -111,6 +112,69 @@
         .start-btn:hover {
             background-color: #45a049;
         }
+        .folder {
+            background: #f0f4f8;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+        }
+        .folder-header {
+            padding: 15px;
+            background: #e2e8f0;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .folder-header h3 {
+            margin: 0;
+            color: #2d3748;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .folder-content {
+            padding: 15px;
+            display: none;
+        }
+        .folder.open .folder-content {
+            display: block;
+        }
+        .folder-icon {
+            transition: transform 0.2s;
+        }
+        .folder.open .folder-icon {
+            transform: rotate(90deg);
+        }
+        .folder-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .folder-actions button {
+            padding: 5px 10px;
+            width: auto;
+        }
+        .add-folder-btn {
+            background-color: #38a169;
+            margin-bottom: 20px;
+        }
+        .unorganized {
+            margin-top: 20px;
+        }
+        .drag-over {
+            border: 2px dashed #4299e1;
+            background: #ebf8ff;
+        }
+        .quiz-link.dragging {
+            opacity: 0.5;
+        }
+        .folder-name-input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -131,7 +195,13 @@
     </div>
 
     <div class="admin-section">
-        <h2>Active Quizzes</h2>
+        <h2>Folder Management</h2>
+        <button class="add-folder-btn" onclick="createFolder()">Create New Folder</button>
+        <div id="folders-container"></div>
+    </div>
+    
+    <div class="admin-section unorganized">
+        <h2>Unorganized Quizzes</h2>
         <div id="quiz-links"></div>
     </div>
 
@@ -209,96 +279,237 @@
             resetTabSelect();
         }
 
+        let folders = JSON.parse(localStorage.getItem('folders') || '[]');
+        
+        function createFolder() {
+            const name = prompt('Enter folder name:');
+            if (!name) return;
+            
+            const folder = {
+                id: Date.now().toString(),
+                name: name,
+                quizzes: []
+            };
+            
+            folders.push(folder);
+            saveFolders();
+            renderFolders();
+        }
+        
+        function deleteFolder(folderId) {
+            if (!confirm('Are you sure you want to delete this folder? Quizzes will be moved to unorganized.')) return;
+            
+            const folder = folders.find(f => f.id === folderId);
+            if (folder) {
+                // Move quizzes to unorganized
+                folder.quizzes.forEach(quiz => {
+                    const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+                    savedQuizzes.push(quiz);
+                    localStorage.setItem('quizzes', JSON.stringify(savedQuizzes));
+                });
+            }
+            
+            folders = folders.filter(f => f.id !== folderId);
+            saveFolders();
+            renderFolders();
+            loadSavedQuizzes();
+        }
+        
+        function renameFolder(folderId) {
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) return;
+            
+            const newName = prompt('Enter new folder name:', folder.name);
+            if (!newName) return;
+            
+            folder.name = newName;
+            saveFolders();
+            renderFolders();
+        }
+        
+        function toggleFolder(folderId) {
+            const folderDiv = document.querySelector(`.folder[data-id="${folderId}"]`);
+            if (folderDiv) {
+                folderDiv.classList.toggle('open');
+            }
+        }
+        
+        function saveFolders() {
+            localStorage.setItem('folders', JSON.stringify(folders));
+        }
+        
+        function renderFolders() {
+            const container = document.getElementById('folders-container');
+            container.innerHTML = '';
+            
+            folders.forEach(folder => {
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'folder';
+                folderDiv.dataset.id = folder.id;
+                
+                folderDiv.innerHTML = `
+                    <div class="folder-header" onclick="toggleFolder('${folder.id}')">
+                        <h3>
+                            <span class="folder-icon">▶</span>
+                            ${folder.name} (${folder.quizzes.length})
+                        </h3>
+                        <div class="folder-actions">
+                            <button onclick="event.stopPropagation(); renameFolder('${folder.id}')" class="copy-btn">
+                                Rename
+                            </button>
+                            <button onclick="event.stopPropagation(); deleteFolder('${folder.id}')" class="deactivate-btn">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    <div class="folder-content" ondragover="handleDragOver(event)" ondrop="handleDrop(event, '${folder.id}')">
+                        ${folder.quizzes.map(quiz => createQuizLinkHTML(quiz, folder.id)).join('')}
+                    </div>
+                `;
+                
+                container.appendChild(folderDiv);
+            });
+        }
+        
         function addQuizLink(spreadsheetId, tabName, quizUrl) {
-            const quizLinksDiv = document.getElementById('quiz-links');
-            const quizLinkDiv = document.createElement('div');
-            quizLinkDiv.className = 'quiz-link';
-            quizLinkDiv.dataset.spreadsheetId = spreadsheetId;
-            quizLinkDiv.dataset.tabName = tabName;
-            
-            const fullUrl = window.location.origin + quizUrl;
-            
-            quizLinkDiv.innerHTML = `
-                <div class="quiz-info">
-                    <div class="sheet-name">${tabName}</div>
-                    <div class="quiz-url">${fullUrl}</div>
-                </div>
-                <div class="button-group">
-                    <button class="copy-btn" onclick="navigator.clipboard.writeText('${fullUrl}')">
-                        Copy Link
-                    </button>
-                    <button onclick="window.open('${quizUrl}', '_blank')" class="start-btn">
-                        Start Quiz
-                    </button>
-                    <button class="deactivate-btn" onclick="removeQuiz(this)">
-                        Remove
-                    </button>
-                </div>
-            `;
-            
-            quizLinksDiv.appendChild(quizLinkDiv);
-
-            // Save to localStorage
+            const quizData = { spreadsheetId, tabName, quizUrl };
             const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
-            // Check for duplicates before adding
+            
+            // Check for duplicates
             const isDuplicate = savedQuizzes.some(q => 
                 q.spreadsheetId === spreadsheetId && q.tabName === tabName
             );
+            
             if (!isDuplicate) {
-                savedQuizzes.push({ spreadsheetId, tabName, quizUrl });
+                savedQuizzes.push(quizData);
                 localStorage.setItem('quizzes', JSON.stringify(savedQuizzes));
+                
+                const quizLinksDiv = document.getElementById('quiz-links');
+                quizLinksDiv.insertAdjacentHTML('beforeend', createQuizLinkHTML(quizData));
             }
         }
-
-        function removeQuiz(button) {
+        
+        function createQuizLinkHTML(quiz, folderId = null) {
+            const fullUrl = window.location.origin + quiz.quizUrl;
+            return `
+                <div class="quiz-link" draggable="true" 
+                    ondragstart="handleDragStart(event, '${quiz.spreadsheetId}', '${quiz.tabName}', '${quiz.quizUrl}')"
+                    data-spreadsheet-id="${quiz.spreadsheetId}"
+                    data-tab-name="${quiz.tabName}">
+                    <div class="quiz-info">
+                        <div class="sheet-name">${quiz.tabName}</div>
+                        <div class="quiz-url">${fullUrl}</div>
+                    </div>
+                    <div class="button-group">
+                        <button class="copy-btn" onclick="navigator.clipboard.writeText('${fullUrl}')">
+                            Copy Link
+                        </button>
+                        <button onclick="window.open('${quiz.quizUrl}', '_blank')" class="start-btn">
+                            Start Quiz
+                        </button>
+                        <button class="deactivate-btn" onclick="removeQuiz(this, '${folderId}')">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function removeQuiz(button, folderId) {
             const quizDiv = button.closest('.quiz-link');
             const spreadsheetId = quizDiv.dataset.spreadsheetId;
             const tabName = quizDiv.dataset.tabName;
             
-            // Remove from localStorage
-            const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
-            const updatedQuizzes = savedQuizzes.filter(q => 
-                !(q.spreadsheetId === spreadsheetId && q.tabName === tabName)
-            );
-            localStorage.setItem('quizzes', JSON.stringify(updatedQuizzes));
+            if (folderId) {
+                // Remove from folder
+                const folder = folders.find(f => f.id === folderId);
+                if (folder) {
+                    folder.quizzes = folder.quizzes.filter(q => 
+                        !(q.spreadsheetId === spreadsheetId && q.tabName === tabName)
+                    );
+                    saveFolders();
+                }
+            } else {
+                // Remove from unorganized quizzes
+                const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+                const updatedQuizzes = savedQuizzes.filter(q => 
+                    !(q.spreadsheetId === spreadsheetId && q.tabName === tabName)
+                );
+                localStorage.setItem('quizzes', JSON.stringify(updatedQuizzes));
+            }
             
-            // Remove from DOM
             quizDiv.remove();
         }
-
-        // Clear all quizzes
-        function clearAllQuizzes() {
+        
+        function handleDragStart(event, spreadsheetId, tabName, quizUrl) {
+            event.dataTransfer.setData('application/json', JSON.stringify({
+                spreadsheetId, tabName, quizUrl
+            }));
+            event.target.classList.add('dragging');
+        }
+        
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('drag-over');
+        }
+        
+        function handleDragLeave(event) {
+            event.currentTarget.classList.remove('drag-over');
+        }
+        
+        function handleDrop(event, folderId) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('drag-over');
+            
+            const quizData = JSON.parse(event.dataTransfer.getData('application/json'));
+            const sourceElement = document.querySelector('.dragging');
+            
+            if (sourceElement) {
+                sourceElement.classList.remove('dragging');
+                
+                // Remove from source
+                if (sourceElement.closest('.folder')) {
+                    const sourceFolder = folders.find(f => 
+                        f.id === sourceElement.closest('.folder').dataset.id
+                    );
+                    if (sourceFolder) {
+                        sourceFolder.quizzes = sourceFolder.quizzes.filter(q => 
+                            !(q.spreadsheetId === quizData.spreadsheetId && q.tabName === quizData.tabName)
+                        );
+                    }
+                } else {
+                    // Remove from unorganized
+                    const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
+                    const updatedQuizzes = savedQuizzes.filter(q => 
+                        !(q.spreadsheetId === quizData.spreadsheetId && q.tabName === quizData.tabName)
+                    );
+                    localStorage.setItem('quizzes', JSON.stringify(updatedQuizzes));
+                }
+                
+                // Add to target folder
+                const targetFolder = folders.find(f => f.id === folderId);
+                if (targetFolder) {
+                    targetFolder.quizzes.push(quizData);
+                    saveFolders();
+                    renderFolders();
+                    loadSavedQuizzes();
+                }
+            }
+        }
+        
+        function loadSavedQuizzes() {
             const quizLinksDiv = document.getElementById('quiz-links');
             quizLinksDiv.innerHTML = '';
-            localStorage.removeItem('quizzes');
-        }
-
-        // Add clear all button
-        document.addEventListener('DOMContentLoaded', function() {
-            const adminSection = document.querySelector('.admin-section:nth-child(2)');
-            const clearButton = document.createElement('button');
-            clearButton.className = 'deactivate-btn';
-            clearButton.style.marginTop = '20px';
-            clearButton.textContent = 'Clear All Quizzes';
-            clearButton.onclick = clearAllQuizzes;
-            adminSection.appendChild(clearButton);
-        });
-
-        // Load saved quizzes on page load
-        window.onload = function() {
+            
             const savedQuizzes = JSON.parse(localStorage.getItem('quizzes') || '[]');
-            // Remove duplicates before loading
-            const uniqueQuizzes = savedQuizzes.filter((quiz, index, self) =>
-                index === self.findIndex(q => 
-                    q.spreadsheetId === quiz.spreadsheetId && q.tabName === quiz.tabName
-                )
-            );
-            // Update localStorage with unique quizzes
-            localStorage.setItem('quizzes', JSON.stringify(uniqueQuizzes));
-            // Add unique quizzes to page
-            uniqueQuizzes.forEach(quiz => {
-                addQuizLink(quiz.spreadsheetId, quiz.tabName, quiz.quizUrl);
+            savedQuizzes.forEach(quiz => {
+                quizLinksDiv.insertAdjacentHTML('beforeend', createQuizLinkHTML(quiz));
             });
+        }
+        
+        window.onload = function() {
+            renderFolders();
+            loadSavedQuizzes();
         };
     </script>
 </body>
